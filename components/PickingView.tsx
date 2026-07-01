@@ -1,18 +1,59 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Order, orderStatusNames, zoneNames, zoneColors } from '@/types';
 import OrderDetail from './OrderDetail';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { pedidoToOrder, hayFaltante } from '@/lib/hgi/adapters/pedidoToOrder';
+import type { Pedido } from '@/lib/hgi/mappers/pedidos';
+import type { Cliente } from '@/lib/hgi/mappers/terceros';
 
 interface PickingViewProps {
   orders: Order[];
   onUpdateOrder: (order: Order) => void;
 }
 
-export default function PickingView({ orders, onUpdateOrder }: PickingViewProps) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export default function PickingView({ orders: _mockOrders, onUpdateOrder }: PickingViewProps) {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+
+  // Fuente REAL: pedidos pendientes de HGINet (vía adaptador Pedido→Order).
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        // Pedidos + clientes en paralelo; clientes enriquece teléfono/dirección.
+        const [pedRes, cliRes] = await Promise.all([fetch('/api/pedidos'), fetch('/api/clientes')]);
+        const ped = await pedRes.json();
+        const cli = await cliRes.json();
+        if (cancelled) return;
+        if (!pedRes.ok || !ped.ok) {
+          setError(ped?.mensaje || `Error ${pedRes.status} al cargar pedidos`);
+          return;
+        }
+        const clientesById = new Map<string, Cliente>();
+        if (cli?.ok && Array.isArray(cli.clientes)) {
+          for (const c of cli.clientes as Cliente[]) clientesById.set(c.id, c);
+        }
+        const adapted = (ped.pedidos as Pedido[]).map((p) => pedidoToOrder(p, clientesById));
+        setOrders(adapted);
+        setAviso(ped.aviso ?? null);
+      } catch (e) {
+        if (!cancelled) setError((e as Error).message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('es-CO', {
@@ -46,6 +87,9 @@ export default function PickingView({ orders, onUpdateOrder }: PickingViewProps)
         order={selectedOrder}
         onBack={() => setSelectedOrder(null)}
         onUpdate={(updatedOrder) => {
+          // Actualiza el estado local (pedidos reales); onUpdateOrder queda por
+          // compatibilidad (estado mock del padre; no-op si no matchea id).
+          setOrders((prev) => prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o)));
           onUpdateOrder(updatedOrder);
           if (updatedOrder.status === 'ready_for_billing') {
             setSelectedOrder(null);
@@ -76,6 +120,11 @@ export default function PickingView({ orders, onUpdateOrder }: PickingViewProps)
           <div className="text-xs uppercase tracking-wide" style={{ color: '#64748B' }}>Valor Total</div>
         </div>
       </div>
+
+      {/* Estado de carga de datos reales de HGINet */}
+      {loading && <p className="text-sm px-2" style={{ color: '#64748B' }}>Cargando pedidos pendientes desde HGINet…</p>}
+      {error && <p className="text-sm px-2" style={{ color: '#EF4444' }}>No se pudieron cargar los pedidos: {error}</p>}
+      {aviso && <p className="text-sm px-2" style={{ color: '#F59E0B' }}>⚠ {aviso}</p>}
 
       {/* Lista de Pedidos - Formato Tabla Compacta */}
       <div>
@@ -124,6 +173,15 @@ export default function PickingView({ orders, onUpdateOrder }: PickingViewProps)
                     <div className="text-xs" style={{ color: '#64748B' }} suppressHydrationWarning>
                       {order.items.length} items • {format(order.createdAt, "HH:mm", { locale: es })}
                     </div>
+                    {hayFaltante(order) && (
+                      <span
+                        className="text-xs px-2 py-0.5 rounded-full font-semibold"
+                        style={{ backgroundColor: '#FEE2E2', color: '#991B1B' }}
+                        title="Algún ítem pide más de lo disponible en stock"
+                      >
+                        ⚠ Stock insuficiente
+                      </span>
+                    )}
                     {order.customer.zone && (
                       <span
                         className="text-xs px-2 py-0.5 rounded-full font-semibold"
@@ -182,6 +240,15 @@ export default function PickingView({ orders, onUpdateOrder }: PickingViewProps)
                     <div className="text-xs" style={{ color: '#64748B' }} suppressHydrationWarning>
                       {order.items.length} items • {format(order.createdAt, "d MMM HH:mm", { locale: es })}
                     </div>
+                    {hayFaltante(order) && (
+                      <span
+                        className="text-xs px-2 py-0.5 rounded-full font-semibold"
+                        style={{ backgroundColor: '#FEE2E2', color: '#991B1B' }}
+                        title="Algún ítem pide más de lo disponible en stock"
+                      >
+                        ⚠ Stock insuficiente
+                      </span>
+                    )}
                     {order.customer.zone && (
                       <span
                         className="text-xs px-2 py-0.5 rounded-full font-semibold"

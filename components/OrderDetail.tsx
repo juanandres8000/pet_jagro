@@ -263,6 +263,15 @@ export default function OrderDetail({ order: initialOrder, onBack, onUpdate }: O
                       )}
                       <span>•</span>
                       <span>Stock: {item.product.stock}</span>
+                      {item.quantity > item.product.stock && (
+                        <span
+                          className="px-2 py-0.5 rounded-full font-semibold"
+                          style={{ backgroundColor: '#FEE2E2', color: '#991B1B' }}
+                          title="Se pide más de lo disponible en stock"
+                        >
+                          ⚠ faltan {item.quantity - item.product.stock}
+                        </span>
+                      )}
                     </div>
                   </div>
 

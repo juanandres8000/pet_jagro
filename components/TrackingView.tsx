@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { mockProducts, mockPurchaseSuggestions } from '@/lib/mockData';
+import { useState, useEffect } from 'react';
+import { mockPurchaseSuggestions } from '@/lib/mockData';
 import { Product, PurchaseSuggestion, categoryNames, Order } from '@/types';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -11,9 +11,39 @@ interface TrackingViewProps {
 }
 
 export default function TrackingView({ orders }: TrackingViewProps) {
-  const [products] = useState<Product[]>(mockProducts);
+  // Productos: datos REALES de HGINet (catálogo + stock de Inventario) vía /api/productos.
+  const [products, setProducts] = useState<Product[]>([]);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [productsError, setProductsError] = useState<string | null>(null);
+  // Aviso si el inventario degradó (catálogo OK pero stock en 0).
+  const [stockAviso, setStockAviso] = useState<string | null>(null);
   const [suggestions] = useState<PurchaseSuggestion[]>(mockPurchaseSuggestions);
   const [filter, setFilter] = useState<'all' | 'low' | 'out'>('all');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/productos');
+        const data = await res.json();
+        if (cancelled) return;
+        if (!res.ok || !data.ok) {
+          setProductsError(data?.mensaje || `Error ${res.status} al cargar productos`);
+          setProducts([]);
+        } else {
+          setProducts(Array.isArray(data.products) ? data.products : []);
+          setStockAviso(data?.inventario?.aviso ?? null);
+        }
+      } catch (e) {
+        if (!cancelled) setProductsError((e as Error).message);
+      } finally {
+        if (!cancelled) setProductsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Filtros por columna
   const [searchText, setSearchText] = useState('');
@@ -216,6 +246,20 @@ export default function TrackingView({ orders }: TrackingViewProps) {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
           <div>
             <h2 className="text-xl sm:text-2xl font-bold" style={{ color: '#1E293B', letterSpacing: '-0.5px' }}>Inventario Completo</h2>
+            {productsLoading && (
+              <p className="text-xs mt-1" style={{ color: '#64748B' }}>Cargando catálogo de HGINet…</p>
+            )}
+            {productsError && (
+              <p className="text-xs mt-1" style={{ color: '#EF4444' }}>No se pudo cargar el catálogo: {productsError}</p>
+            )}
+            {!productsLoading && !productsError && stockAviso && (
+              <p className="text-xs mt-1" style={{ color: '#F59E0B' }}>⚠ {stockAviso}</p>
+            )}
+            {!productsLoading && !productsError && !stockAviso && (
+              <p className="text-[10px] mt-1" style={{ color: '#94A3B8' }}>
+                Catálogo y stock en vivo desde HGINet
+              </p>
+            )}
             {filteredProducts.length !== products.length && (
               <p className="text-xs mt-1" style={{ color: '#64748B' }}>
                 Mostrando {filteredProducts.length} de {products.length} productos

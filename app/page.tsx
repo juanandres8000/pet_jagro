@@ -7,11 +7,12 @@ import TrackingView from '@/components/TrackingView';
 import FacturacionView from '@/components/FacturacionView';
 import LiquidacionesView from '@/components/LiquidacionesView';
 import IntegrationsView from '@/components/IntegrationsView';
+import ClientesView from '@/components/ClientesView';
 import ChatWidget from '@/components/ChatWidget';
 import { Order } from '@/types';
 import { mockOrders } from '@/lib/mockData';
 
-type Tab = 'picking' | 'billing' | 'liquidaciones' | 'tracking' | 'integrations';
+type Tab = 'picking' | 'billing' | 'liquidaciones' | 'tracking' | 'clientes' | 'integrations';
 
 interface MenuItem {
   id: Tab;
@@ -33,6 +34,7 @@ export default function Home() {
     { id: 'billing', label: 'Facturación', icon: '💰' },
     { id: 'liquidaciones', label: 'Liquidaciones', icon: '📋' },
     { id: 'tracking', label: 'Trazabilidad', icon: '🔍' },
+    { id: 'clientes', label: 'Clientes', icon: '👥' },
     { id: 'integrations', label: 'Integraciones', icon: '🔌' },
   ];
 
@@ -203,6 +205,7 @@ export default function Home() {
           {activeTab === 'billing' && <FacturacionView orders={orders} onUpdateOrder={handleUpdateOrder} />}
           {activeTab === 'liquidaciones' && <LiquidacionesView />}
           {activeTab === 'tracking' && <TrackingView orders={orders} />}
+          {activeTab === 'clientes' && <ClientesView />}
           {activeTab === 'integrations' && <IntegrationsView />}
         </div>
       </main>
