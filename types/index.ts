@@ -86,6 +86,8 @@ export interface Order {
     zone?: DeliveryZone; // Zona de entrega
     alertaCartera?: boolean; // cliente con alerta de cartera/bloqueo en el ERP
     motivoAlerta?: string | null; // texto crudo que disparó la alerta
+    saldoVencido?: number; // saldo vencido del cliente (de cartera), si hay
+    diasMaxMora?: number; // días máximos de mora del cliente
   };
   items: OrderItem[];
   status: OrderStatus;

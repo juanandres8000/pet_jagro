@@ -3,22 +3,24 @@ import { HgiError } from '@/lib/hgi/client';
 import { buildCatalogSnapshot } from '@/lib/hgi/catalog';
 import { buildClientsSnapshot } from '@/lib/hgi/clientes';
 import { buildPedidosSnapshot } from '@/lib/hgi/pedidos';
+import { buildCarteraSnapshot } from '@/lib/hgi/cartera';
 import { writeSnapshot, type Dataset } from '@/lib/hgi/snapshotStore';
 import type { BuildResult } from '@/lib/hgi/readThrough';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-// Reconstruye contra HGINet (~12-22s por dataset).
-export const maxDuration = 30;
+// Reconstruye contra HGINet (~12-22s por dataset; cartera hasta ~25s).
+export const maxDuration = 60;
 
-// Builders por dataset. Para refrescar uno solo: ?dataset=catalog|clients|pedidos.
+// Builders por dataset. Para refrescar uno: ?dataset=catalog|clients|pedidos|cartera.
 const BUILDERS: Record<Dataset, () => Promise<BuildResult<unknown>>> = {
   catalog: buildCatalogSnapshot,
   clients: buildClientsSnapshot,
   pedidos: buildPedidosSnapshot,
+  cartera: buildCarteraSnapshot,
 };
 
-const ALL: Dataset[] = ['catalog', 'clients', 'pedidos'];
+const ALL: Dataset[] = ['catalog', 'clients', 'pedidos', 'cartera'];
 
 /** Ejecuta el rebuild de los datasets pedidos (o todos) y guarda en Neon. */
 async function runRefresh(req: Request): Promise<NextResponse> {

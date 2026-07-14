@@ -6,7 +6,7 @@ import { neon } from '@neondatabase/serverless';
  * datasets (catálogo, clientes, …) con el mismo patrón TTL + serve-stale.
  */
 
-export type Dataset = 'catalog' | 'clients' | 'pedidos';
+export type Dataset = 'catalog' | 'clients' | 'pedidos' | 'cartera';
 
 // cache: 'no-store' — el driver de Neon usa fetch y Next.js lo cachea por defecto.
 function getDb() {

@@ -8,11 +8,12 @@ import FacturacionView from '@/components/FacturacionView';
 import LiquidacionesView from '@/components/LiquidacionesView';
 import IntegrationsView from '@/components/IntegrationsView';
 import ClientesView from '@/components/ClientesView';
+import CarteraView from '@/components/CarteraView';
 import ChatWidget from '@/components/ChatWidget';
 import { Order } from '@/types';
 import { mockOrders } from '@/lib/mockData';
 
-type Tab = 'picking' | 'billing' | 'liquidaciones' | 'tracking' | 'clientes' | 'integrations';
+type Tab = 'picking' | 'billing' | 'liquidaciones' | 'tracking' | 'clientes' | 'cartera' | 'integrations';
 
 interface MenuItem {
   id: Tab;
@@ -24,6 +25,13 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('picking');
   const [orders, setOrders] = useState<Order[]>(mockOrders);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Búsqueda prefijada al saltar de Cartera → Clientes (link "Ver cliente").
+  const [clientesSearch, setClientesSearch] = useState('');
+
+  const verClienteDesdeCartera = (codigoTercero: string) => {
+    setClientesSearch(codigoTercero);
+    setActiveTab('clientes');
+  };
 
   const handleUpdateOrder = (updatedOrder: Order) => {
     setOrders(orders.map(o => o.id === updatedOrder.id ? updatedOrder : o));
@@ -35,6 +43,7 @@ export default function Home() {
     { id: 'liquidaciones', label: 'Liquidaciones', icon: '📋' },
     { id: 'tracking', label: 'Trazabilidad', icon: '🔍' },
     { id: 'clientes', label: 'Clientes', icon: '👥' },
+    { id: 'cartera', label: 'Cartera', icon: '💵' },
     { id: 'integrations', label: 'Integraciones', icon: '🔌' },
   ];
 
@@ -205,7 +214,8 @@ export default function Home() {
           {activeTab === 'billing' && <FacturacionView orders={orders} onUpdateOrder={handleUpdateOrder} />}
           {activeTab === 'liquidaciones' && <LiquidacionesView />}
           {activeTab === 'tracking' && <TrackingView orders={orders} />}
-          {activeTab === 'clientes' && <ClientesView />}
+          {activeTab === 'clientes' && <ClientesView initialSearch={clientesSearch} />}
+          {activeTab === 'cartera' && <CarteraView onVerCliente={verClienteDesdeCartera} />}
           {activeTab === 'integrations' && <IntegrationsView />}
         </div>
       </main>

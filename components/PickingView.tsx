@@ -8,6 +8,7 @@ import { es } from 'date-fns/locale';
 import { pedidoToOrder, hayFaltante } from '@/lib/hgi/adapters/pedidoToOrder';
 import type { Pedido } from '@/lib/hgi/mappers/pedidos';
 import type { Cliente } from '@/lib/hgi/mappers/terceros';
+import type { CarteraCliente } from '@/lib/hgi/mappers/cartera';
 
 interface PickingViewProps {
   orders: Order[];
@@ -31,8 +32,13 @@ export default function PickingView({ orders: _mockOrders, onUpdateOrder }: Pick
     let cancelled = false;
     (async () => {
       try {
-        // Pedidos + clientes en paralelo; clientes enriquece teléfono/dirección.
-        const [pedRes, cliRes] = await Promise.all([fetch('/api/pedidos'), fetch('/api/clientes')]);
+        // Pedidos + clientes + cartera en paralelo; clientes enriquece
+        // teléfono/dirección y alerta; cartera aporta el saldo vencido.
+        const [pedRes, cliRes, carRes] = await Promise.all([
+          fetch('/api/pedidos'),
+          fetch('/api/clientes'),
+          fetch('/api/cartera'),
+        ]);
         const ped = await pedRes.json();
         const cli = await cliRes.json();
         if (cancelled) return;
@@ -44,7 +50,16 @@ export default function PickingView({ orders: _mockOrders, onUpdateOrder }: Pick
         if (cli?.ok && Array.isArray(cli.clientes)) {
           for (const c of cli.clientes as Cliente[]) clientesById.set(c.id, c);
         }
-        const adapted = (ped.pedidos as Pedido[]).map((p) => pedidoToOrder(p, clientesById));
+        const carteraByTercero = new Map<string, CarteraCliente>();
+        try {
+          const car = await carRes.json();
+          if (car?.ok && Array.isArray(car.clientes)) {
+            for (const c of car.clientes as CarteraCliente[]) carteraByTercero.set(c.codigoTercero, c);
+          }
+        } catch {
+          /* cartera opcional */
+        }
+        const adapted = (ped.pedidos as Pedido[]).map((p) => pedidoToOrder(p, clientesById, carteraByTercero));
         setOrders(adapted);
         setAviso(ped.aviso ?? null);
       } catch (e) {
@@ -209,6 +224,15 @@ export default function PickingView({ orders: _mockOrders, onUpdateOrder }: Pick
                         🚫 Cartera
                       </span>
                     )}
+                    {(order.customer.saldoVencido ?? 0) > 0 && (
+                      <span
+                        className="text-xs px-2 py-0.5 rounded-full font-semibold"
+                        style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}
+                        title={`Días máx mora: ${order.customer.diasMaxMora ?? 0}`}
+                      >
+                        {formatPrice(order.customer.saldoVencido ?? 0)} vencido
+                      </span>
+                    )}
                     {hayFaltante(order) && (
                       <span
                         className="text-xs px-2 py-0.5 rounded-full font-semibold"
@@ -283,6 +307,15 @@ export default function PickingView({ orders: _mockOrders, onUpdateOrder }: Pick
                         title={order.customer.motivoAlerta ?? 'Cliente con alerta de cartera'}
                       >
                         🚫 Cartera
+                      </span>
+                    )}
+                    {(order.customer.saldoVencido ?? 0) > 0 && (
+                      <span
+                        className="text-xs px-2 py-0.5 rounded-full font-semibold"
+                        style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}
+                        title={`Días máx mora: ${order.customer.diasMaxMora ?? 0}`}
+                      >
+                        {formatPrice(order.customer.saldoVencido ?? 0)} vencido
                       </span>
                     )}
                     {hayFaltante(order) && (

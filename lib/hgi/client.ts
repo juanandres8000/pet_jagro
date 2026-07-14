@@ -262,8 +262,9 @@ export async function hgiGet<T = unknown>(
   recurso: string,
   metodo: string,
   params: HgiGetParams = {},
+  opts: { timeoutMs?: number } = {},
 ): Promise<T> {
-  return hgiGetInternal<T>(recurso, metodo, params, false);
+  return hgiGetInternal<T>(recurso, metodo, params, false, opts.timeoutMs ?? REQ_TIMEOUT_MS);
 }
 
 async function hgiGetInternal<T>(
@@ -271,6 +272,7 @@ async function hgiGetInternal<T>(
   metodo: string,
   params: HgiGetParams,
   isRetry: boolean,
+  timeoutMs: number = REQ_TIMEOUT_MS,
 ): Promise<T> {
   const cfg = getConfig();
   const token = await getValidToken();
@@ -288,7 +290,7 @@ async function hgiGetInternal<T>(
     res = await fetchWithTimeout(
       url,
       { method: 'GET', headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } },
-      REQ_TIMEOUT_MS,
+      timeoutMs,
     );
   } catch (err) {
     console.error(`[hgi] fallo de red en ${recurso}/${metodo}:`, (err as Error).message);
@@ -299,7 +301,7 @@ async function hgiGetInternal<T>(
   if (res.status === 401 && !isRetry) {
     await clearToken();
     memoryToken = null;
-    return hgiGetInternal<T>(recurso, metodo, params, true);
+    return hgiGetInternal<T>(recurso, metodo, params, true, timeoutMs);
   }
 
   const data = (await res.json().catch(() => null)) as unknown;

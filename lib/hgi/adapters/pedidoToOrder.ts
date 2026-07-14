@@ -1,6 +1,7 @@
 import type { Order, OrderItem, Product, DeliveryZone } from '@/types';
 import type { Pedido, PedidoLinea } from '@/lib/hgi/mappers/pedidos';
 import type { Cliente } from '@/lib/hgi/mappers/terceros';
+import type { CarteraCliente } from '@/lib/hgi/mappers/cartera';
 
 /**
  * Adaptador Pedido (nativo HGINet) → Order (tipo compartido del dashboard).
@@ -55,8 +56,13 @@ function lineaToItem(l: PedidoLinea): OrderItem {
  * teléfono/dirección/ciudad cruzando NitTercero con el NumeroIdentificacion del
  * cliente. Si no matchea, esos campos quedan undefined (la vista los trata opcionales).
  */
-export function pedidoToOrder(pedido: Pedido, clientesById?: Map<string, Cliente>): Order {
+export function pedidoToOrder(
+  pedido: Pedido,
+  clientesById?: Map<string, Cliente>,
+  carteraByTercero?: Map<string, CarteraCliente>,
+): Order {
   const cli = clientesById?.get(pedido.cliente.nit);
+  const car = carteraByTercero?.get(pedido.cliente.nit);
   const address = cli ? [cli.direccion, cli.ciudad].filter(Boolean).join(', ') || undefined : undefined;
 
   return {
@@ -69,6 +75,8 @@ export function pedidoToOrder(pedido: Pedido, clientesById?: Map<string, Cliente
       zone: toDeliveryZone(pedido.zona.nombre),
       alertaCartera: cli?.alertaCartera ?? false,
       motivoAlerta: cli?.motivoAlerta ?? null,
+      saldoVencido: car?.saldoVencido,
+      diasMaxMora: car?.diasMaxMora,
     },
     items: pedido.lineas.map(lineaToItem),
     status: 'pending',

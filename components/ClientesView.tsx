@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import type { Cliente } from '@/lib/hgi/mappers/terceros';
+import type { CarteraCliente } from '@/lib/hgi/mappers/cartera';
 
 const MAX_ROWS = 300;
 
@@ -13,22 +14,34 @@ interface TipoInfo {
   count: number;
 }
 
-export default function ClientesView() {
+interface ClientesViewProps {
+  /** Búsqueda inicial (p.ej. al navegar desde Cartera con un CodigoTercero). */
+  initialSearch?: string;
+}
+
+export default function ClientesView({ initialSearch = '' }: ClientesViewProps) {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [tipos, setTipos] = useState<Record<string, TipoInfo>>({});
+  const [carteraById, setCarteraById] = useState<Map<string, CarteraCliente>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
 
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(initialSearch);
   const [tipoFilter, setTipoFilter] = useState<ClienteFiltro>('ambos');
+
+  // Sincroniza la búsqueda cuando llega un nuevo initialSearch (link de Cartera).
+  useEffect(() => {
+    if (initialSearch) setSearch(initialSearch);
+  }, [initialSearch]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/clientes');
+        // Clientes (fuente) + cartera (best-effort para el saldo) en paralelo.
+        const [res, carRes] = await Promise.all([fetch('/api/clientes'), fetch('/api/cartera')]);
         const data = await res.json();
         if (cancelled) return;
         if (!res.ok || !data.ok) {
@@ -38,6 +51,14 @@ export default function ClientesView() {
           setTipos(data.tiposCliente ?? {});
           setAviso(data.aviso ?? null);
           setStale(!!data.stale);
+        }
+        try {
+          const car = await carRes.json();
+          if (!cancelled && car?.ok && Array.isArray(car.clientes)) {
+            setCarteraById(new Map((car.clientes as CarteraCliente[]).map((c) => [c.codigoTercero, c])));
+          }
+        } catch {
+          /* cartera es opcional; sin ella no se muestra saldo */
         }
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
@@ -164,6 +185,18 @@ export default function ClientesView() {
                             ⚠ Cartera
                           </span>
                         )}
+                        {(() => {
+                          const car = carteraById.get(c.id);
+                          return car && car.saldoVencido > 0 ? (
+                            <span
+                              className="px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+                              style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}
+                              title={`Saldo vencido · días máx mora: ${car.diasMaxMora}`}
+                            >
+                              {formatCupo(car.saldoVencido)} vencido
+                            </span>
+                          ) : null;
+                        })()}
                       </span>
                       {c.nombreComercial ? <span className="block text-[10px]" style={{ color: '#94A3B8' }}>{c.nombreComercial}</span> : null}
                     </td>
