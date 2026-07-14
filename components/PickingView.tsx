@@ -23,6 +23,9 @@ export default function PickingView({ orders: _mockOrders, onUpdateOrder }: Pick
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
+  // Filtro de pedidos stale: por defecto se muestran (toggle ON) porque hoy el
+  // 100% de pendientes es de ene-2020; al apagarlo se ocultan los < CORTE.
+  const [verHistoricos, setVerHistoricos] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,8 +81,15 @@ export default function PickingView({ orders: _mockOrders, onUpdateOrder }: Pick
     }
   };
 
-  const pendingOrders = orders.filter(o => o.status === 'pending');
-  const inProgressOrders = orders.filter(o => o.status === 'in_progress');
+  // Corte de "históricos": pedidos con fecha anterior a 2021-01-01 se consideran
+  // stale y se ocultan cuando el toggle "Ver históricos" está apagado.
+  const CORTE_HISTORICO = new Date('2021-01-01T00:00:00');
+  const esHistorico = (o: Order) => o.createdAt < CORTE_HISTORICO;
+  const historicosCount = orders.filter(esHistorico).length;
+  const visibleOrders = verHistoricos ? orders : orders.filter((o) => !esHistorico(o));
+
+  const pendingOrders = visibleOrders.filter(o => o.status === 'pending');
+  const inProgressOrders = visibleOrders.filter(o => o.status === 'in_progress');
 
   if (selectedOrder) {
     return (
@@ -132,8 +142,25 @@ export default function PickingView({ orders: _mockOrders, onUpdateOrder }: Pick
           <h2 className="text-xl font-bold" style={{ color: '#1E293B', letterSpacing: '-0.5px' }}>
             Pedidos Activos
           </h2>
-          <div className="text-sm" style={{ color: '#64748B' }}>
-            {pendingOrders.length + inProgressOrders.length} total
+          <div className="flex items-center gap-3">
+            {historicosCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setVerHistoricos((v) => !v)}
+                className="text-xs px-3 py-1.5 rounded-lg font-medium whitespace-nowrap"
+                style={{
+                  border: '1px solid #E2E8F0',
+                  backgroundColor: verHistoricos ? '#7CB9E8' : '#FFFFFF',
+                  color: verHistoricos ? '#FFFFFF' : '#64748B',
+                }}
+                title="Pedidos con fecha anterior al 2021-01-01 (stale). Actívalo para verlos."
+              >
+                {verHistoricos ? '✓ ' : ''}Ver históricos ({historicosCount})
+              </button>
+            )}
+            <div className="text-sm" style={{ color: '#64748B' }}>
+              {pendingOrders.length + inProgressOrders.length} total
+            </div>
           </div>
         </div>
 
