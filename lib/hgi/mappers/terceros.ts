@@ -30,6 +30,10 @@ export interface HgiTercero {
   Estado?: number | string;
   FechaUltimaNegociacion?: string;
   CodigoTipoTercero?: string | number;
+  // Campos de texto libre donde el ERP mete alertas de cartera/bloqueo.
+  // DireccionAlterna es campo de dirección, pero se abusa para "NO DESPACHAR" etc.
+  Observaciones?: string;
+  DireccionAlterna?: string;
   [key: string]: unknown;
 }
 
@@ -46,10 +50,14 @@ export interface Cliente {
   telefono?: string;
   email?: string;
   codigoVendedor?: string;
-  cupo: number; // cupo de crédito
-  plazo: number; // días de plazo
+  cupo: number; // cupo de crédito (Cupo, estructurado)
+  plazo: number; // días de plazo (Plazo, estructurado)
   descuento: number;
+  estado: number; // Estado crudo del ERP (1 activo, 0 suspendido)
   activo: boolean; // Estado === 1
+  // Alerta de cartera/bloqueo derivada del texto libre del tercero (+ Estado=0).
+  alertaCartera: boolean;
+  motivoAlerta: string | null; // texto crudo de los campos que dispararon la alerta
   codigoTipoTercero: string; // crudo (0..7)
   tipoTerceroDescripcion?: string; // resuelto contra Api/TercerosTipo (ej: "CLIENTES GENERALES")
   fechaUltimaNegociacion?: string;
@@ -73,11 +81,50 @@ function tipoPersona(v: unknown): Cliente['tipoPersona'] {
   return num(v) === 2 ? 'juridica' : 'natural';
 }
 
+/**
+ * Patrones de alerta de cartera. Case-insensitive y tolerantes a typos comunes
+ * (letras repetidas, espaciado variable) vistos en datos reales de HGINet:
+ * "noooooo despachar", "NO MAS PEDIDOS HASTA VAJAR CARTERA", "SOLO POS", etc.
+ */
+const ALERTA_PATRONES: RegExp[] = [
+  /n+o+\s*despach/i, // NO DESPACHAR  (tolera "noooooo despachar", "nodespachar")
+  /cart[eé]ra/i, //     CARTERA
+  /suspend/i, //         SUSPENDIDO / SUSPENDER
+  /solo\s*pos/i, //      SOLO POS
+  /pago\s*anticip/i, //  PAGO ANTICIPADO
+  /vencid/i, //          VENCIDAS / VENCIDO
+  /n+o+\s*factur/i, //   NO FACTURAR
+  /\bojo+\b/i, //        OJO  (tolera "ojooo")
+];
+
+/** Campos de texto libre del tercero donde el ERP mete alertas. */
+const CAMPOS_ALERTA: Array<keyof HgiTercero> = ['Observaciones', 'DireccionAlterna'];
+
+/**
+ * Deriva la alerta de cartera parseando Observaciones + DireccionAlterna contra
+ * los patrones, y marca también Estado=0 (suspendido en el ERP).
+ * `motivo` = texto CRUDO concatenado de los campos que dispararon.
+ */
+function derivarAlerta(t: HgiTercero, estado: number): { alerta: boolean; motivo: string | null } {
+  const motivos: string[] = [];
+  for (const campo of CAMPOS_ALERTA) {
+    const texto = str(t[campo]);
+    if (texto && texto !== '0' && ALERTA_PATRONES.some((re) => re.test(texto))) {
+      motivos.push(texto); // crudo, tal cual viene
+    }
+  }
+  // Estado=0 es alerta por sí mismo, aunque no haya texto de alerta.
+  if (estado === 0) motivos.push('SUSPENDIDO EN ERP');
+  return { alerta: motivos.length > 0, motivo: motivos.length ? motivos.join(' · ') : null };
+}
+
 /** Mapea UN Tercero → Cliente. `tipos` resuelve CodigoTipoTercero → descripción. */
 export function mapTercero(t: HgiTercero, tipos?: Map<string, string>): Cliente {
   const id = str(t.NumeroIdentificacion);
   const dv = num(t.DigitoVerificacion);
   const codigoTipo = str(t.CodigoTipoTercero);
+  const estado = num(t.Estado);
+  const { alerta, motivo } = derivarAlerta(t, estado);
   return {
     id,
     identificacion: dv > 0 ? `${id}-${dv}` : id,
@@ -96,7 +143,10 @@ export function mapTercero(t: HgiTercero, tipos?: Map<string, string>): Cliente 
     cupo: num(t.Cupo),
     plazo: num(t.Plazo),
     descuento: num(t.Descuento),
-    activo: num(t.Estado) === 1,
+    estado,
+    activo: estado === 1,
+    alertaCartera: alerta,
+    motivoAlerta: motivo,
     codigoTipoTercero: codigoTipo,
     tipoTerceroDescripcion: tipos?.get(codigoTipo),
     fechaUltimaNegociacion: clean(t.FechaUltimaNegociacion),

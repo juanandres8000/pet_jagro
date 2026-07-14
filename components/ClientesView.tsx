@@ -153,7 +153,18 @@ export default function ClientesView() {
                 filtered.slice(0, MAX_ROWS).map((c) => (
                   <tr key={c.id} style={{ borderTop: '1px solid #E2E8F0' }}>
                     <td className="px-3 py-2 text-sm font-medium" style={{ color: '#1E293B' }}>
-                      {c.nombre}
+                      <span className="inline-flex items-center gap-1.5 flex-wrap">
+                        {c.nombre}
+                        {c.alertaCartera && (
+                          <span
+                            className="px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+                            style={{ backgroundColor: '#FEE2E2', color: '#991B1B' }}
+                            title={c.motivoAlerta ?? 'Alerta de cartera'}
+                          >
+                            ⚠ Cartera
+                          </span>
+                        )}
+                      </span>
                       {c.nombreComercial ? <span className="block text-[10px]" style={{ color: '#94A3B8' }}>{c.nombreComercial}</span> : null}
                     </td>
                     <td className="px-3 py-2 text-xs font-mono" style={{ color: '#64748B' }}>

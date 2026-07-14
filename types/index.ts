@@ -84,6 +84,8 @@ export interface Order {
     phone?: string;
     address?: string;
     zone?: DeliveryZone; // Zona de entrega
+    alertaCartera?: boolean; // cliente con alerta de cartera/bloqueo en el ERP
+    motivoAlerta?: string | null; // texto crudo que disparó la alerta
   };
   items: OrderItem[];
   status: OrderStatus;

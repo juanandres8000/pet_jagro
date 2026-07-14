@@ -67,6 +67,8 @@ export function pedidoToOrder(pedido: Pedido, clientesById?: Map<string, Cliente
       phone: cli?.telefono,
       address,
       zone: toDeliveryZone(pedido.zona.nombre),
+      alertaCartera: cli?.alertaCartera ?? false,
+      motivoAlerta: cli?.motivoAlerta ?? null,
     },
     items: pedido.lineas.map(lineaToItem),
     status: 'pending',

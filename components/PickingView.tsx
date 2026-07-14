@@ -173,6 +173,15 @@ export default function PickingView({ orders: _mockOrders, onUpdateOrder }: Pick
                     <div className="text-xs" style={{ color: '#64748B' }} suppressHydrationWarning>
                       {order.items.length} items • {format(order.createdAt, "HH:mm", { locale: es })}
                     </div>
+                    {order.customer.alertaCartera && (
+                      <span
+                        className="text-xs px-2 py-0.5 rounded-full font-bold"
+                        style={{ backgroundColor: '#DC2626', color: '#FFFFFF' }}
+                        title={order.customer.motivoAlerta ?? 'Cliente con alerta de cartera'}
+                      >
+                        🚫 Cartera
+                      </span>
+                    )}
                     {hayFaltante(order) && (
                       <span
                         className="text-xs px-2 py-0.5 rounded-full font-semibold"
@@ -240,6 +249,15 @@ export default function PickingView({ orders: _mockOrders, onUpdateOrder }: Pick
                     <div className="text-xs" style={{ color: '#64748B' }} suppressHydrationWarning>
                       {order.items.length} items • {format(order.createdAt, "d MMM HH:mm", { locale: es })}
                     </div>
+                    {order.customer.alertaCartera && (
+                      <span
+                        className="text-xs px-2 py-0.5 rounded-full font-bold"
+                        style={{ backgroundColor: '#DC2626', color: '#FFFFFF' }}
+                        title={order.customer.motivoAlerta ?? 'Cliente con alerta de cartera'}
+                      >
+                        🚫 Cartera
+                      </span>
+                    )}
                     {hayFaltante(order) && (
                       <span
                         className="text-xs px-2 py-0.5 rounded-full font-semibold"
