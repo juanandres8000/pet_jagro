@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import QuantityModal from './QuantityModal';
 import ProductSelectionModal from './ProductSelectionModal';
 import { Product } from '@/types';
+import { Button } from '@/components/ui';
 
 interface BarcodeScannerProps {
   onScanSuccess: (barcode: string, quantity?: number) => void;
@@ -284,26 +285,29 @@ export default function BarcodeScanner({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto" style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}>
-      <div className="rounded-xl shadow-2xl max-w-2xl w-full p-4 sm:p-6 my-auto" style={{ backgroundColor: '#FFFFFF' }}>
-        <div className="flex items-center justify-between mb-4 sm:mb-6">
-          <h2 className="text-lg sm:text-2xl font-bold" style={{ color: '#1E293B', letterSpacing: '-0.5px' }}>Escanear Código</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-ink/20 p-2 sm:p-4">
+      <div className="my-auto w-full max-w-2xl rounded-lg border border-line bg-surface p-4 shadow-soft sm:p-6">
+        <div className="mb-4 flex items-center justify-between sm:mb-6">
+          <h2 className="font-serif text-lg font-semibold tracking-tight text-ink sm:text-2xl">
+            Escanear código
+          </h2>
           <button
             onClick={handleClose}
-            className="text-2xl sm:text-3xl font-bold min-w-[40px] min-h-[40px] flex items-center justify-center transition-colors"
-            style={{ color: '#94A3B8' }}
-            onMouseEnter={(e) => e.currentTarget.style.color = '#1E293B'}
-            onMouseLeave={(e) => e.currentTarget.style.color = '#94A3B8'}
+            className="flex min-h-[40px] min-w-[40px] items-center justify-center text-2xl text-ink-faint transition-colors hover:text-ink sm:text-3xl"
           >
             ×
           </button>
         </div>
 
-        <div className="mb-4 sm:mb-6 rounded-lg p-3 sm:p-4" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-          <div className="text-xs sm:text-sm mb-1" style={{ color: '#64748B' }}>Producto</div>
-          <div className="text-base sm:text-lg font-semibold mb-2 break-words" style={{ color: '#1E293B' }}>{productName}</div>
-          <div className="text-xs sm:text-sm mb-1" style={{ color: '#64748B' }}>Código esperado</div>
-          <div className="font-mono text-sm sm:text-lg font-bold break-all" style={{ color: '#7CB9E8' }}>{expectedBarcode}</div>
+        <div className="mb-4 rounded border border-line bg-surface-muted p-3 sm:mb-6 sm:p-4">
+          <div className="text-xs font-medium uppercase tracking-wider text-ink-muted">Producto</div>
+          <div className="mt-1 break-words font-medium text-ink sm:text-lg">{productName}</div>
+          <div className="mt-3 text-xs font-medium uppercase tracking-wider text-ink-muted">
+            Código esperado
+          </div>
+          <div className="tabular mt-1 break-all font-mono text-sm font-semibold text-accent sm:text-lg">
+            {expectedBarcode}
+          </div>
         </div>
 
         {/* Área de escaneo */}
@@ -313,30 +317,26 @@ export default function BarcodeScanner({
             <div>
               <div
                 ref={scannerRef}
-                className="rounded-lg overflow-hidden bg-black"
+                className="overflow-hidden rounded border border-line bg-ink"
                 style={{ position: 'relative', minHeight: '300px' }}
               />
               <button
                 onClick={stopScanning}
-                className="w-full mt-3 sm:mt-4 py-3 text-white rounded-lg transition-all duration-200 font-semibold text-sm sm:text-base"
-                style={{ backgroundColor: '#EF4444' }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#DC2626'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#EF4444'}
+                className="mt-3 w-full rounded border border-line bg-surface py-3 text-sm font-medium text-danger transition-colors hover:bg-surface-hover sm:mt-4 sm:text-base"
               >
-                ⏹ Detener Escaneo
+                Detener escaneo
               </button>
             </div>
           ) : (
             // Vista inicial
-            <div className="rounded-lg p-6 sm:p-8 text-center" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-              <div className="mb-3 sm:mb-4" style={{ color: '#1E293B' }}>
-                <div className="text-4xl sm:text-6xl mb-2">📷</div>
-                <div className="text-xs sm:text-sm" style={{ color: '#64748B' }}>Coloca el código de barras frente a la cámara</div>
+            <div className="rounded border border-line bg-surface-muted p-6 text-center sm:p-8">
+              <div className="mb-3 text-xs text-ink-muted sm:mb-4 sm:text-sm">
+                Coloca el código de barras frente a la cámara
               </div>
 
               {/* Rectángulo de enfoque */}
-              <div className="mx-auto w-48 sm:w-64 h-32 sm:h-40 border-4 border-dashed rounded-lg flex items-center justify-center" style={{ borderColor: '#7CB9E8' }}>
-                <div className="w-32 sm:w-48 h-2 opacity-50 animate-pulse" style={{ backgroundColor: '#7CB9E8' }}></div>
+              <div className="mx-auto flex h-32 w-48 items-center justify-center rounded border-2 border-dashed border-line-strong sm:h-40 sm:w-64">
+                <div className="h-0.5 w-32 animate-pulse bg-accent/40 sm:w-48"></div>
               </div>
             </div>
           )}
@@ -344,33 +344,21 @@ export default function BarcodeScanner({
 
         {/* Botones de escaneo */}
         {!isScanning && (
-          <div className="grid grid-cols-2 gap-2 sm:gap-3 mb-3 sm:mb-4">
-            <button
-              onClick={handleQuickScan}
-              className="py-3 text-white rounded-lg transition-all duration-200 font-semibold text-sm sm:text-base"
-              style={{ backgroundColor: '#22C55E' }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#16A34A'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#22C55E'}
-            >
-              ✓ Demo
-            </button>
+          <div className="mb-3 grid grid-cols-2 gap-2 sm:mb-4 sm:gap-3">
+            <Button variant="secondary" onClick={handleQuickScan}>
+              Demo
+            </Button>
 
-            <button
-              onClick={startScanning}
-              className="py-3 text-white rounded-lg transition-all duration-200 font-semibold text-sm sm:text-base"
-              style={{ backgroundColor: '#7CB9E8' }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#5B9BD5'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#7CB9E8'}
-            >
-              Escanear con Cámara
-            </button>
+            <Button variant="primary" onClick={startScanning}>
+              Escanear con cámara
+            </Button>
           </div>
         )}
 
         {/* Ingreso manual */}
         {!isScanning && (
-          <div className="pt-3 sm:pt-4" style={{ borderTop: '1px solid #E2E8F0' }}>
-            <p className="text-xs sm:text-sm mb-2 sm:mb-3" style={{ color: '#64748B' }}>
+          <div className="border-t border-line pt-3 sm:pt-4">
+            <p className="mb-2 text-xs text-ink-muted sm:mb-3 sm:text-sm">
               {allProducts.length > 0
                 ? 'Ingresa código o busca por nombre de producto:'
                 : '¿No funciona la cámara? Ingresa el código manualmente:'}
@@ -392,50 +380,30 @@ export default function BarcodeScanner({
                     setTimeout(() => setShowSuggestions(false), 200);
                   }}
                   placeholder={allProducts.length > 0 ? "Código o nombre..." : "Ingresa el código de barras"}
-                  className="w-full px-3 sm:px-4 py-2 sm:py-3 rounded-lg focus:outline-none text-sm sm:text-base"
-                  style={{
-                    border: '1px solid #E2E8F0',
-                    backgroundColor: '#F8FAFC',
-                    color: '#1E293B'
-                  }}
+                  className="w-full rounded border border-line bg-surface px-3 py-2 text-sm text-ink transition-colors placeholder:text-ink-faint focus:border-accent focus:outline-none sm:px-4 sm:py-3 sm:text-base"
                 />
 
                 {/* Dropdown de sugerencias */}
                 {showSuggestions && searchResults.length > 0 && (
                   <div
-                    className="absolute top-full left-0 right-0 mt-1 rounded-lg overflow-hidden shadow-xl max-h-64 overflow-y-auto"
-                    style={{
-                      backgroundColor: '#FFFFFF',
-                      border: '1px solid #E2E8F0',
-                      zIndex: 100
-                    }}
+                    className="absolute left-0 right-0 top-full z-[100] mt-1 max-h-64 divide-y divide-line overflow-y-auto rounded border border-line bg-surface shadow-card-hover"
                   >
-                    {searchResults.map((product, idx) => (
+                    {searchResults.map((product) => (
                       <button
                         key={product.id}
                         type="button"
                         onClick={() => handleSelectProduct(product)}
-                        className="w-full px-3 py-3 text-left transition-all duration-200 flex items-start gap-3"
-                        style={{
-                          backgroundColor: idx % 2 === 0 ? 'transparent' : '#F8FAFC',
-                          borderBottom: idx < searchResults.length - 1 ? '1px solid #E2E8F0' : 'none'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(124, 185, 232, 0.15)'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = idx % 2 === 0 ? 'transparent' : '#F8FAFC'}
+                        className="flex w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-surface-hover"
                       >
                         <div className="flex-1">
-                          <div className="text-sm font-medium mb-1" style={{ color: '#1E293B' }}>
-                            {product.name}
-                          </div>
-                          <div className="flex items-center gap-2 text-xs" style={{ color: '#64748B' }}>
-                            <span className="font-mono" style={{ color: '#7CB9E8' }}>
-                              {product.barcode}
-                            </span>
+                          <div className="text-sm font-medium text-ink">{product.name}</div>
+                          <div className="mt-0.5 flex items-center gap-2 text-xs text-ink-muted">
+                            <span className="tabular font-mono text-ink-faint">{product.barcode}</span>
                             <span>•</span>
-                            <span>Stock: {product.stock}</span>
+                            <span className="tabular">Stock: {product.stock}</span>
                           </div>
                         </div>
-                        <div className="text-xs px-2 py-1 rounded whitespace-nowrap" style={{ backgroundColor: '#F1F5F9', color: '#7CB9E8' }}>
+                        <div className="whitespace-nowrap text-xs font-medium text-accent">
                           Seleccionar
                         </div>
                       </button>
@@ -443,23 +411,13 @@ export default function BarcodeScanner({
                   </div>
                 )}
               </div>
-              <button
-                type="submit"
-                className="px-4 sm:px-6 py-2 sm:py-3 text-white rounded-lg transition-all duration-200 font-semibold text-sm sm:text-base whitespace-nowrap"
-                style={{ backgroundColor: '#7CB9E8' }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#5B9BD5'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#7CB9E8'}
-              >
+              <Button type="submit" variant="primary" className="whitespace-nowrap sm:px-6 sm:py-3">
                 Verificar
-              </button>
+              </Button>
             </form>
 
             {error && (
-              <div className="mt-2 sm:mt-3 px-3 sm:px-4 py-2 rounded text-xs sm:text-sm" style={{
-                backgroundColor: 'rgba(239, 68, 68, 0.08)',
-                border: '1px solid rgba(239, 68, 68, 0.2)',
-                color: '#EF4444'
-              }}>
+              <div className="mt-2 rounded border border-danger/15 bg-danger-soft px-3 py-2 text-xs text-danger sm:mt-3 sm:px-4 sm:text-sm">
                 {error}
               </div>
             )}

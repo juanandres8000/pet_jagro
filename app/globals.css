@@ -3,72 +3,69 @@
 @tailwind utilities;
 
 :root {
-  /* Light Blue Pastel Theme Colors */
-  --foreground-rgb: 30, 41, 59;
-  --background-start-rgb: 255, 255, 255;
-  --background-end-rgb: 248, 250, 252;
+  /* Paleta editorial neutra. Espejo de los tokens de tailwind.config.ts —
+     mantener ambos en sync; los componentes usan las clases de Tailwind. */
+  --cream: #FAF8F5;
+  --cream-deep: #F3F0EA;
+  --surface: #FFFFFF;
+  --surface-hover: #F5F2EC;
 
-  /* Brand Colors - Blue Pastel */
-  --primary: #7CB9E8;
-  --primary-dark: #5B9BD5;
-  --primary-light: #B4D4E7;
+  --line: #E8E4DD;
+  --line-strong: #D8D3C9;
 
-  /* Backgrounds */
-  --bg-white: #FFFFFF;
-  --bg-surface: #F8FAFC;
-  --bg-card-hover: #F1F5F9;
+  --ink: #1A1A18;
+  --ink-muted: #6B6860;
+  --ink-faint: #9A968C;
 
-  /* Text Colors */
-  --text-primary: #1E293B;
-  --text-secondary: #64748B;
+  /* Único acento. */
+  --accent: #1E4D3B;
+  --accent-dark: #163A2C;
+  --accent-soft: #ECF1EE;
 
-  /* Status Colors */
-  --success: #86EFAC;
-  --success-dark: #22C55E;
-  --warning: #FCD34D;
-  --warning-dark: #F59E0B;
-  --error: #FDA4AF;
-  --error-dark: #EF4444;
-
-  /* Borders */
-  --border: #E2E8F0;
-  --border-light: #F1F5F9;
+  --warn: #8A6A2F;
+  --warn-soft: #F7F1E4;
+  --danger: #8C3A32;
+  --danger-soft: #F8EDEB;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
-  color: rgb(var(--foreground-rgb));
-  background: #FFFFFF;
+  color: var(--ink);
+  background: var(--cream);
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
+  /* Cifras alineadas en KPIs y columnas numéricas de tablas. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
 }
 
-/* Custom scrollbar - Light Blue Theme */
+/* Scrollbar discreto sobre crema. */
 ::-webkit-scrollbar {
   width: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-surface);
+  background: var(--cream);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: var(--line-strong);
   border-radius: 5px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--primary);
+  background: var(--ink-faint);
 }
 
-/* Select styling for light theme */
 select {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748B'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236B6860'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 0.5rem center;
   background-size: 1.5em 1.5em;
@@ -78,9 +75,8 @@ select {
   appearance: none;
 }
 
-/* Focus states */
 input:focus, select:focus, textarea:focus {
   outline: none;
-  border-color: var(--primary) !important;
-  box-shadow: 0 0 0 3px rgba(124, 185, 232, 0.2);
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(30, 77, 59, 0.12);
 }

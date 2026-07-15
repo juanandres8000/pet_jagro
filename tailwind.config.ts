@@ -10,28 +10,54 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        primary: {
-          DEFAULT: '#7CB9E8',
-          light: '#B4D4E7',
-          dark: '#5B9BD5',
-          50: '#F0F7FC',
-          100: '#E1EFF9',
-          200: '#B4D4E7',
-          300: '#7CB9E8',
-          400: '#5B9BD5',
-          500: '#4A90C9',
-          600: '#3A7AB3',
-          700: '#2D6599',
-          800: '#1F4F7F',
-          900: '#143A66',
+        // Fondo de la aplicación: crema editorial.
+        cream: {
+          DEFAULT: '#FAF8F5',
+          deep: '#F3F0EA',
         },
-        surface: '#F8FAFC',
-        border: '#E2E8F0',
+        // Superficies elevadas (cards, tablas, sidebar).
+        surface: {
+          DEFAULT: '#FFFFFF',
+          muted: '#FAF8F5',
+          hover: '#F5F2EC',
+        },
+        // Bordes y divisores.
+        line: {
+          DEFAULT: '#E8E4DD',
+          strong: '#D8D3C9',
+        },
+        // Texto.
+        ink: {
+          DEFAULT: '#1A1A18',
+          muted: '#6B6860',
+          faint: '#9A968C',
+          inverse: '#FAF8F5',
+        },
+        // Único acento de la marca: verde oscuro.
+        accent: {
+          DEFAULT: '#1E4D3B',
+          dark: '#163A2C',
+          light: '#2A6B52',
+          soft: '#ECF1EE',
+        },
+        // Estados apagados, para badges y alertas.
+        warn: {
+          DEFAULT: '#8A6A2F',
+          soft: '#F7F1E4',
+        },
+        danger: {
+          DEFAULT: '#8C3A32',
+          soft: '#F8EDEB',
+        },
+      },
+      fontFamily: {
+        serif: ['var(--font-serif)', 'Georgia', 'serif'],
+        sans: ['var(--font-sans)', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
-        'soft': '0 2px 8px rgba(0, 0, 0, 0.04)',
-        'card': '0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04)',
-        'card-hover': '0 4px 12px rgba(0, 0, 0, 0.08)',
+        'soft': '0 1px 2px rgba(26, 26, 24, 0.04)',
+        'card': '0 1px 2px rgba(26, 26, 24, 0.03)',
+        'card-hover': '0 2px 8px rgba(26, 26, 24, 0.06)',
       },
     },
   },

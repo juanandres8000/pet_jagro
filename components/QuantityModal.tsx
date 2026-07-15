@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Button } from '@/components/ui';
 
 interface QuantityModalProps {
   productName: string;
@@ -50,45 +51,28 @@ export default function QuantityModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
-    >
-      <div
-        className="rounded-xl max-w-md w-full p-6 transition-all duration-200"
-        style={{
-          backgroundColor: '#FFFFFF',
-          boxShadow: '0 20px 40px rgba(0, 0, 0, 0.15)',
-          border: '1px solid #E2E8F0'
-        }}
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/20 p-4">
+      <div className="w-full max-w-md rounded-lg border border-line bg-surface p-6 shadow-soft">
         {/* Header */}
         <div className="mb-6">
-          <h2
-            className="text-xl font-bold mb-2"
-            style={{ color: '#1E293B' }}
-          >
+          <h2 className="font-serif text-xl font-semibold tracking-tight text-ink">
             ¿Cuántas unidades?
           </h2>
-          <div
-            className="p-3 rounded-lg"
-            style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}
-          >
-            <div className="text-sm mb-1" style={{ color: '#64748B' }}>
+          <div className="mt-3 rounded border border-line bg-surface-muted p-3">
+            <div className="text-xs font-medium uppercase tracking-wider text-ink-muted">
               Producto
             </div>
-            <div className="font-semibold mb-2 break-words" style={{ color: '#1E293B' }}>
-              {productName}
-            </div>
-            <div className="text-xs" style={{ color: '#64748B' }}>
-              Código: <span className="font-mono font-semibold" style={{ color: '#5B9BD5' }}>{barcode}</span>
+            <div className="mt-1 break-words font-medium text-ink">{productName}</div>
+            <div className="mt-2 text-xs text-ink-muted">
+              Código:{' '}
+              <span className="tabular font-mono font-medium text-ink">{barcode}</span>
             </div>
           </div>
         </div>
 
         {/* Input de cantidad */}
         <div className="mb-4">
-          <label className="text-sm font-medium mb-2 block" style={{ color: '#64748B' }}>
+          <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-ink-muted">
             Cantidad a agregar
           </label>
           <input
@@ -98,44 +82,23 @@ export default function QuantityModal({
             onChange={(e) => handleQuantityChange(e.target.value)}
             onKeyPress={handleKeyPress}
             autoFocus
-            className="w-full px-4 py-3 rounded-lg text-center text-2xl font-bold focus:outline-none focus:ring-2 transition-all duration-200"
-            style={{
-              backgroundColor: '#FFFFFF',
-              border: '2px solid #E2E8F0',
-              color: '#1E293B',
-              '--tw-ring-color': '#7CB9E8',
-            } as React.CSSProperties}
+            className="tabular w-full rounded border border-line bg-surface px-4 py-3 text-center font-serif text-2xl font-semibold text-ink transition-colors focus:border-accent focus:outline-none"
           />
         </div>
 
         {/* Botones rápidos */}
         <div className="mb-6">
-          <div className="text-xs font-medium mb-2" style={{ color: '#64748B' }}>
-            Cantidades comunes:
-          </div>
+          <div className="mb-2 text-xs text-ink-muted">Cantidades comunes</div>
           <div className="grid grid-cols-4 gap-2">
             {quickButtons.map((num) => (
               <button
                 key={num}
                 onClick={() => setQuantity(num)}
-                className="py-2 px-3 rounded-lg font-semibold text-sm transition-all duration-200"
-                style={{
-                  backgroundColor: quantity === num ? '#7CB9E8' : '#F8FAFC',
-                  border: `2px solid ${quantity === num ? '#7CB9E8' : '#E2E8F0'}`,
-                  color: quantity === num ? 'white' : '#1E293B',
-                }}
-                onMouseEnter={(e) => {
-                  if (quantity !== num) {
-                    e.currentTarget.style.backgroundColor = '#F1F5F9';
-                    e.currentTarget.style.borderColor = '#B4D4E7';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (quantity !== num) {
-                    e.currentTarget.style.backgroundColor = '#F8FAFC';
-                    e.currentTarget.style.borderColor = '#E2E8F0';
-                  }
-                }}
+                className={`tabular rounded border px-3 py-2 text-sm font-medium transition-colors ${
+                  quantity === num
+                    ? 'border-accent bg-accent text-ink-inverse'
+                    : 'border-line bg-surface text-ink-muted hover:bg-surface-hover hover:text-ink'
+                }`}
               >
                 {num}
               </button>
@@ -145,57 +108,23 @@ export default function QuantityModal({
 
         {/* Error message */}
         {error && (
-          <div
-            className="mb-4 px-3 py-2 rounded-lg text-sm"
-            style={{
-              backgroundColor: 'rgba(245, 158, 11, 0.1)',
-              border: '1px solid rgba(245, 158, 11, 0.3)',
-              color: '#D97706'
-            }}
-          >
-            ⚠️ {error}
+          <div className="mb-4 rounded border border-warn/15 bg-warn-soft px-3 py-2 text-sm text-warn">
+            {error}
           </div>
         )}
 
         {/* Botones de acción */}
         <div className="flex gap-3">
-          <button
-            onClick={onCancel}
-            className="flex-1 py-3 rounded-lg font-semibold transition-all duration-200"
-            style={{
-              backgroundColor: 'transparent',
-              border: '1px solid #E2E8F0',
-              color: '#64748B'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = '#EF4444';
-              e.currentTarget.style.color = '#EF4444';
-              e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.05)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = '#E2E8F0';
-              e.currentTarget.style.color = '#64748B';
-              e.currentTarget.style.backgroundColor = 'transparent';
-            }}
-          >
+          <Button variant="secondary" onClick={onCancel} className="flex-1">
             Cancelar
-          </button>
-          <button
-            onClick={handleConfirm}
-            className="flex-1 py-3 rounded-lg font-semibold transition-all duration-200"
-            style={{
-              backgroundColor: '#7CB9E8',
-              color: 'white'
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#5B9BD5'}
-            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#7CB9E8'}
-          >
-            ✓ Confirmar
-          </button>
+          </Button>
+          <Button variant="primary" onClick={handleConfirm} className="flex-1">
+            Confirmar
+          </Button>
         </div>
 
         {/* Hint */}
-        <div className="mt-4 text-center text-xs" style={{ color: '#94A3B8' }}>
+        <div className="mt-4 text-center text-xs text-ink-faint">
           Presiona Enter para confirmar
         </div>
       </div>

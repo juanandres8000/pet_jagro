@@ -2,6 +2,7 @@
 
 import { Product, categoryNames } from '@/types';
 import { useState } from 'react';
+import { Button } from '@/components/ui';
 
 interface ProductSelectionModalProps {
   barcode: string;
@@ -36,153 +37,78 @@ export default function ProductSelectionModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
-      style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
-    >
-      <div
-        className="rounded-xl max-w-md w-full p-6 transition-all duration-200"
-        style={{
-          backgroundColor: '#FFFFFF',
-          boxShadow: '0 20px 40px rgba(0, 0, 0, 0.15)',
-          border: '1px solid #E2E8F0'
-        }}
-      >
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink/20 p-4">
+      <div className="w-full max-w-md rounded-lg border border-line bg-surface p-6 shadow-soft">
         {/* Header con alerta */}
-        <div
-          className="mb-4 p-3 rounded-lg"
-          style={{
-            backgroundColor: 'rgba(245, 158, 11, 0.1)',
-            border: '1px solid rgba(245, 158, 11, 0.3)'
-          }}
-        >
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-lg">⚠️</span>
-            <span className="font-semibold text-sm" style={{ color: '#D97706' }}>
-              Código con múltiples productos
-            </span>
-          </div>
-          <p className="text-xs" style={{ color: '#64748B' }}>
-            El código{' '}
-            <span className="font-mono font-bold" style={{ color: '#5B9BD5' }}>
-              {barcode}
-            </span>{' '}
+        <div className="mb-4 rounded border border-warn/15 bg-warn-soft p-3">
+          <div className="text-sm font-medium text-warn">Código con múltiples productos</div>
+          <p className="mt-1 text-xs text-ink-muted">
+            El código <span className="tabular font-mono font-medium text-ink">{barcode}</span>{' '}
             corresponde a {products.length} presentaciones diferentes
           </p>
         </div>
 
         {/* Título */}
-        <h2 className="text-lg font-bold mb-3" style={{ color: '#1E293B' }}>
-          Selecciona la presentación correcta:
+        <h2 className="mb-3 font-serif text-lg font-semibold tracking-tight text-ink">
+          Selecciona la presentación correcta
         </h2>
 
         {/* Lista de productos para elegir */}
-        <div className="space-y-2 mb-4 max-h-80 overflow-y-auto">
-          {products.map((product, idx) => (
+        <div className="mb-4 max-h-80 space-y-2 overflow-y-auto">
+          {products.map((product) => (
             <button
               key={product.id}
               onClick={() => handleSelect(product)}
-              className="w-full p-4 rounded-lg transition-all duration-200 text-left relative"
-              style={{
-                backgroundColor: '#F8FAFC',
-                border: '1px solid #E2E8F0'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#F1F5F9';
-                e.currentTarget.style.transform = 'scale(1.02)';
-                e.currentTarget.style.borderColor = '#7CB9E8';
-                e.currentTarget.style.boxShadow = '0 4px 12px rgba(124, 185, 232, 0.15)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = '#F8FAFC';
-                e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.borderColor = '#E2E8F0';
-                e.currentTarget.style.boxShadow = 'none';
-              }}
+              className="w-full rounded border border-line bg-surface-muted p-4 text-left transition-colors hover:border-accent hover:bg-surface-hover"
             >
-              <div className="flex justify-between items-start mb-2">
+              <div className="mb-2 flex items-start justify-between gap-3">
                 <div className="flex-1">
-                  <div className="font-semibold text-base mb-1" style={{ color: '#1E293B' }}>
-                    {product.name}
-                  </div>
-                  <div className="text-xs mb-1" style={{ color: '#64748B' }}>
+                  <div className="font-medium text-ink">{product.name}</div>
+                  <div className="mt-0.5 text-xs text-ink-muted">
                     {categoryNames[product.category]}
                   </div>
                 </div>
-                <div className="text-right ml-3">
-                  <div className="text-xs mb-1" style={{ color: '#64748B' }}>
-                    Stock
-                  </div>
+                <div className="text-right">
+                  <div className="text-xs uppercase tracking-wider text-ink-muted">Stock</div>
                   <div
-                    className="font-bold text-sm"
-                    style={{
-                      color: product.stock > 0 ? '#22C55E' : '#EF4444'
-                    }}
+                    className={`tabular mt-0.5 text-sm font-semibold ${
+                      product.stock > 0 ? 'text-ink' : 'text-danger'
+                    }`}
                   >
                     {product.stock}
                   </div>
                 </div>
               </div>
 
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-semibold" style={{ color: '#5B9BD5' }}>
+              <div className="flex items-center justify-between">
+                <span className="tabular text-sm font-medium text-ink">
                   {formatPrice(product.price)}
                 </span>
-                <span
-                  className="text-xs px-3 py-1 rounded-full font-medium"
-                  style={{
-                    backgroundColor: '#7CB9E8',
-                    color: 'white'
-                  }}
-                >
-                  Seleccionar →
-                </span>
+                <span className="text-xs font-medium text-accent">Seleccionar →</span>
               </div>
             </button>
           ))}
         </div>
 
         {/* Opción de recordar selección */}
-        <div
-          className="p-3 rounded-lg mb-4"
-          style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}
-        >
-          <label className="flex items-start gap-2 cursor-pointer">
+        <div className="mb-4 rounded border border-line bg-surface-muted p-3">
+          <label className="flex cursor-pointer items-start gap-2">
             <input
               type="checkbox"
               checked={rememberChoice}
               onChange={(e) => setRememberChoice(e.target.checked)}
-              className="mt-0.5"
-              style={{ accentColor: '#7CB9E8' }}
+              className="mt-0.5 accent-accent"
             />
-            <span className="text-xs flex-1" style={{ color: '#64748B' }}>
+            <span className="flex-1 text-xs text-ink-muted">
               Recordar mi elección para este código durante esta sesión
             </span>
           </label>
         </div>
 
         {/* Botón cancelar */}
-        <button
-          onClick={onCancel}
-          className="w-full py-3 rounded-lg text-sm font-semibold transition-all duration-200"
-          style={{
-            backgroundColor: 'transparent',
-            border: '1px solid #E2E8F0',
-            color: '#64748B'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = '#EF4444';
-            e.currentTarget.style.color = '#EF4444';
-            e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.05)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = '#E2E8F0';
-            e.currentTarget.style.color = '#64748B';
-            e.currentTarget.style.backgroundColor = 'transparent';
-          }}
-        >
+        <Button variant="secondary" onClick={onCancel} className="w-full">
           Cancelar
-        </button>
+        </Button>
       </div>
     </div>
   );

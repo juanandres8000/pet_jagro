@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { Order, OrderItem, categoryNames, zoneNames, zoneColors } from '@/types';
+import { Order, OrderItem, categoryNames, zoneNames } from '@/types';
 import BarcodeScanner from './BarcodeScanner';
-import { mockProducts } from '@/lib/mockData';
+import { useProductos } from '@/lib/hooks/useProductos';
+import { Card, SectionTitle, Badge, Button } from '@/components/ui';
 
 interface OrderDetailProps {
   order: Order;
@@ -15,6 +16,8 @@ export default function OrderDetail({ order: initialOrder, onBack, onUpdate }: O
   const [order, setOrder] = useState<Order>(initialOrder);
   const [showScanner, setShowScanner] = useState(false);
   const [currentItem, setCurrentItem] = useState<OrderItem | null>(null);
+  // Catálogo real de HGINet: el escáner lo usa para resolver códigos duplicados.
+  const { products: allProducts } = useProductos();
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('es-CO', {
@@ -90,186 +93,143 @@ export default function OrderDetail({ order: initialOrder, onBack, onUpdate }: O
                     order.items.reduce((sum, item) => sum + item.quantity, 0)) * 100;
 
   return (
-    <div className="space-y-4">
-      {/* Header Minimalista */}
+    <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-200"
-          style={{ backgroundColor: '#FFFFFF', color: '#7CB9E8', border: '1px solid #E2E8F0' }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = '#F8FAFC';
-            e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.08)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = '#FFFFFF';
-            e.currentTarget.style.boxShadow = 'none';
-          }}
-        >
-          <span className="text-xl">←</span>
-          <span className="font-semibold">Volver</span>
-        </button>
+        <Button variant="secondary" onClick={onBack}>
+          ← Volver
+        </Button>
 
-        {order.status === 'completed' && (
-          <div className="flex items-center gap-2 px-4 py-2 rounded-lg" style={{ backgroundColor: 'rgba(34, 197, 94, 0.15)', color: '#22C55E' }}>
-            <span>✅</span>
-            <span className="font-semibold">Completado</span>
-          </div>
-        )}
+        {order.status === 'completed' && <Badge tone="accent">Completado</Badge>}
       </div>
 
       {/* Grid Layout - Info Cliente + Detalles */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Columna Izquierda - Info Cliente */}
-        <div className="lg:col-span-1 space-y-4">
+        <div className="space-y-6 lg:col-span-1">
           {/* Card Cliente */}
-          <div className="p-6 rounded-xl shadow-sm" style={{ backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0' }}>
-            <div className="text-xs uppercase tracking-wide mb-3" style={{ color: '#64748B' }}>Pedido</div>
-            <div className="text-3xl font-bold mb-4" style={{ color: '#7CB9E8', letterSpacing: '-1px' }}>
+          <Card className="p-6">
+            <div className="text-xs font-medium uppercase tracking-wider text-ink-muted">Pedido</div>
+            <div className="tabular mt-2 font-serif text-3xl font-semibold tracking-tight text-ink">
               {order.orderNumber}
             </div>
 
-            <div className="text-xs uppercase tracking-wide mb-2" style={{ color: '#64748B' }}>Cliente</div>
-            <div className="text-lg font-semibold mb-3" style={{ color: '#1E293B' }}>
-              {order.customer.name}
+            <div className="mt-6 text-xs font-medium uppercase tracking-wider text-ink-muted">
+              Cliente
             </div>
+            <div className="mt-1 text-lg font-medium text-ink">{order.customer.name}</div>
 
-            <div className="space-y-2 text-sm" style={{ color: '#64748B' }}>
-              <div className="flex items-start gap-2">
-                <span>📞</span>
-                <span>{order.customer.phone}</span>
-              </div>
-              <div className="flex items-start gap-2">
-                <span>📍</span>
-                <div className="flex-1">
-                  <div className="mb-2">{order.customer.address}</div>
-                  {order.customer.zone && (
-                    <div
-                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold"
-                      style={{
-                        backgroundColor: `${zoneColors[order.customer.zone]}15`,
-                        color: zoneColors[order.customer.zone],
-                        border: `1px solid ${zoneColors[order.customer.zone]}30`
-                      }}
-                    >
-                      <span>🗺️</span>
-                      <span>Zona {zoneNames[order.customer.zone]}</span>
-                    </div>
-                  )}
-                </div>
+            <div className="mt-4 space-y-3 text-sm text-ink-muted">
+              <div className="tabular">{order.customer.phone}</div>
+              <div>
+                <div>{order.customer.address}</div>
+                {order.customer.zone && (
+                  <div className="mt-2">
+                    <Badge tone="neutral">Zona {zoneNames[order.customer.zone]}</Badge>
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="mt-6 pt-6" style={{ borderTop: '1px solid #E2E8F0' }}>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs uppercase" style={{ color: '#64748B' }}>Total</span>
-                <span className="text-2xl font-bold" style={{ color: '#22C55E' }}>
+            <div className="mt-6 border-t border-line pt-6">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium uppercase tracking-wider text-ink-muted">
+                  Total
+                </span>
+                <span className="tabular font-serif text-2xl font-semibold text-accent">
                   {formatPrice(order.totalValue)}
                 </span>
               </div>
             </div>
-          </div>
+          </Card>
 
           {/* Progreso */}
           {order.status !== 'pending' && (
-            <div className="p-6 rounded-xl shadow-sm" style={{ backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0' }}>
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs uppercase tracking-wide" style={{ color: '#64748B' }}>Progreso</span>
-                <span className="text-2xl font-bold" style={{ color: '#7CB9E8' }}>{Math.round(progress)}%</span>
+            <Card className="p-6">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-xs font-medium uppercase tracking-wider text-ink-muted">
+                  Progreso
+                </span>
+                <span className="tabular font-serif text-2xl font-semibold text-ink">
+                  {Math.round(progress)}%
+                </span>
               </div>
-              <div className="h-2 rounded-full" style={{ backgroundColor: '#E2E8F0' }}>
+              <div className="h-1.5 overflow-hidden rounded-full bg-cream-deep">
                 <div
-                  className="h-2 rounded-full transition-all duration-500"
-                  style={{ backgroundColor: '#7CB9E8', width: `${progress}%` }}
+                  className="h-full rounded-full bg-accent transition-all duration-500"
+                  style={{ width: `${progress}%` }}
                 />
               </div>
-              <div className="mt-3 text-xs" style={{ color: '#64748B' }}>
+              <div className="tabular mt-3 text-xs text-ink-muted">
                 {order.items.filter(i => i.scanned).length} de {order.items.length} items escaneados
               </div>
-            </div>
+            </Card>
           )}
 
           {/* Botones de Acción */}
           {order.status === 'pending' && (
-            <button
-              onClick={handleAcceptOrder}
-              className="w-full py-4 rounded-xl font-bold text-white transition-all duration-200"
-              style={{ backgroundColor: '#7CB9E8' }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#5B9BD5'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#7CB9E8'}
-            >
-              ✓ Aceptar y Comenzar
-            </button>
+            <Button variant="primary" onClick={handleAcceptOrder} className="w-full py-3">
+              Aceptar y comenzar
+            </Button>
           )}
 
           {order.status === 'completed' && (
-            <button
-              onClick={handleSendToBilling}
-              className="w-full py-4 rounded-xl font-bold text-white transition-all duration-200"
-              style={{ backgroundColor: '#7CB9E8' }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#5B9BD5'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#7CB9E8'}
-            >
-              💰 Pasar a Facturación
-            </button>
+            <Button variant="primary" onClick={handleSendToBilling} className="w-full py-3">
+              Pasar a facturación
+            </Button>
           )}
         </div>
 
         {/* Columna Derecha - Tabla de Items */}
         <div className="lg:col-span-2">
-          <div className="p-6 rounded-xl shadow-sm" style={{ backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0' }}>
-            <h3 className="text-xl font-bold mb-4" style={{ color: '#1E293B', letterSpacing: '-0.5px' }}>
-              Items del Pedido
-            </h3>
+          <Card className="p-6">
+            <SectionTitle as="h3">Items del pedido</SectionTitle>
 
             {/* Tabla Compacta */}
-            <div className="space-y-2">
+            <div className="mt-4 space-y-2">
               {order.items.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-center gap-4 p-4 rounded-lg transition-all duration-200"
-                  style={{
-                    backgroundColor: item.scanned ? 'rgba(34, 197, 94, 0.08)' : '#F8FAFC',
-                    border: item.scanned ? '1px solid rgba(34, 197, 94, 0.2)' : '1px solid #E2E8F0'
-                  }}
+                  className={`flex items-center gap-4 rounded border p-4 transition-colors ${
+                    item.scanned
+                      ? 'border-accent/15 bg-accent-soft'
+                      : 'border-line bg-surface-muted'
+                  }`}
                 >
                   {/* Status Icon */}
                   <div className="flex-shrink-0">
                     {item.scanned ? (
-                      <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: '#22C55E' }}>
-                        <span className="text-white text-lg">✓</span>
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-sm text-ink-inverse">
+                        ✓
                       </div>
                     ) : (
-                      <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: '#F1F5F9', border: '2px dashed #94A3B8' }}>
-                        <span style={{ color: '#94A3B8' }}>□</span>
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full border border-dashed border-line-strong bg-surface text-ink-faint">
+                        □
                       </div>
                     )}
                   </div>
 
                   {/* Info Producto */}
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold mb-1" style={{ color: '#1E293B' }}>
-                      {item.product.name}
-                    </div>
-                    <div className="flex items-center gap-3 text-xs" style={{ color: '#64748B' }}>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-ink">{item.product.name}</div>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-muted">
                       <span>{categoryNames[item.product.category]}</span>
-                      <span>•</span>
-                      <span className="font-mono">{item.product.barcode}</span>
+                      <span className="text-ink-faint">•</span>
+                      <span className="tabular font-mono text-ink-faint">{item.product.barcode}</span>
                       {item.product.batchNumber && (
                         <>
-                          <span>•</span>
-                          <span>Lote: {item.product.batchNumber}</span>
+                          <span className="text-ink-faint">•</span>
+                          <span className="tabular">Lote: {item.product.batchNumber}</span>
                         </>
                       )}
-                      <span>•</span>
-                      <span>Stock: {item.product.stock}</span>
+                      <span className="text-ink-faint">•</span>
+                      <span className="tabular">Stock: {item.product.stock}</span>
                       {item.quantity > item.product.stock && (
                         <span
-                          className="px-2 py-0.5 rounded-full font-semibold"
-                          style={{ backgroundColor: '#FEE2E2', color: '#991B1B' }}
+                          className="tabular rounded border border-danger/15 bg-danger-soft px-2 py-0.5 font-medium text-danger"
                           title="Se pide más de lo disponible en stock"
                         >
-                          ⚠ faltan {item.quantity - item.product.stock}
+                          Faltan {item.quantity - item.product.stock}
                         </span>
                       )}
                     </div>
@@ -277,28 +237,32 @@ export default function OrderDetail({ order: initialOrder, onBack, onUpdate }: O
 
                   {/* Cantidad */}
                   <div className="flex-shrink-0 text-center">
-                    <div className="text-sm" style={{ color: '#64748B' }}>Cantidad</div>
-                    <div className="text-xl font-bold" style={{ color: item.scanned ? '#22C55E' : '#7CB9E8' }}>
+                    <div className="text-xs font-medium uppercase tracking-wider text-ink-muted">
+                      Cantidad
+                    </div>
+                    <div
+                      className={`tabular mt-1 font-serif text-xl font-semibold ${
+                        item.scanned ? 'text-accent' : 'text-ink'
+                      }`}
+                    >
                       {item.scannedQuantity}/{item.quantity}
                     </div>
                   </div>
 
                   {/* Botón Escanear */}
                   {order.status === 'in_progress' && !item.scanned && (
-                    <button
+                    <Button
+                      variant="primary"
                       onClick={() => handleStartScanning(item)}
-                      className="flex-shrink-0 px-6 py-3 rounded-lg font-semibold text-white transition-all duration-200"
-                      style={{ backgroundColor: '#7CB9E8' }}
-                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#5B9BD5'}
-                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#7CB9E8'}
+                      className="flex-shrink-0"
                     >
-                      📷 Escanear
-                    </button>
+                      Escanear
+                    </Button>
                   )}
                 </div>
               ))}
             </div>
-          </div>
+          </Card>
         </div>
       </div>
 
@@ -312,7 +276,7 @@ export default function OrderDetail({ order: initialOrder, onBack, onUpdate }: O
           }}
           expectedBarcode={currentItem.product.barcode}
           productName={currentItem.product.name}
-          allProducts={mockProducts}
+          allProducts={allProducts}
         />
       )}
     </div>

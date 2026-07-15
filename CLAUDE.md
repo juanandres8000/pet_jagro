@@ -20,12 +20,22 @@ Sistema de gestión de picking y distribución para productos veterinarios. Demo
 - `app/globals.css` → Tema azul pastel
 
 ## Módulos
-1. **Picking** - Pedidos activos
-2. **Facturación**
-3. **Liquidaciones** - Entregas y pagos
-4. **Trazabilidad** - Inventario
-5. **Integraciones**
-6. **Chat AI** - Asistente con GPT-4o
+Nav agrupado en 3 secciones (`MENU_GROUPS` en `app/page.tsx`):
+- **OPERACIÓN**: Picking, Inventario, Catálogo
+- **COMERCIAL**: Clientes
+- **FINANZAS**: Cartera
+
+Más el **Chat AI** (widget flotante, GPT-4o).
+
+Inventario y Catálogo son dos lecturas de la misma fuente (`/api/productos`) vía
+el hook compartido `lib/hooks/useProductos.ts`. Sustituyeron a la antigua
+Trazabilidad, que mezclaba ambas.
+
+### Módulos retirados
+Facturación, Liquidaciones y Trazabilidad se retiraron del producto. No tienen
+entrada de nav ni rama de render, así que son inalcanzables. La app es una SPA
+con estado de tab en `app/page.tsx` — no hay rutas de archivo que proteger.
+Integraciones también salió del nav.
 
 ## Chat AI
 - Hook `useChat` de `@ai-sdk/react`
@@ -80,21 +90,49 @@ DATABASE_URL=postgresql://...@...neon.tech/...
 - `DATABASE_URL` es la connection string de Neon PostgreSQL
 
 ## Tema Visual
-- Primary: `#7CB9E8` (azul pastel)
-- Primary Dark: `#5B9BD5`
-- Primary Light: `#B4D4E7`
-- Background: `#FFFFFF`
-- Surface: `#F8FAFC`
-- Text Primary: `#1E293B`
-- Text Secondary: `#64748B`
-- Border: `#E2E8F0`
+Estilo editorial/corporativo sobrio. **Un solo acento: verde oscuro.** El azul
+pastel anterior (`#7CB9E8`) se eliminó por completo.
+
+Tokens en `tailwind.config.ts` (espejados como CSS vars en `app/globals.css`).
+**Usa las clases de Tailwind — no metas hex sueltos en componentes.**
+
+| Token | Hex | Uso |
+|---|---|---|
+| `cream` | `#FAF8F5` | Fondo de la app |
+| `surface` | `#FFFFFF` | Cards, tablas, sidebar |
+| `surface-muted` | `#FAF8F5` | Headers de tabla, hover de fila |
+| `line` | `#E8E4DD` | Bordes y divisores |
+| `ink` | `#1A1A18` | Texto principal |
+| `ink-muted` | `#6B6860` | Texto secundario |
+| `ink-faint` | `#9A968C` | Texto terciario |
+| `accent` | `#1E4D3B` | Activo, links, botones primarios, KPIs |
+| `warn` | `#8A6A2F` | Alertas medias (ámbar apagado) |
+| `danger` | `#8C3A32` | Alertas severas (rojo apagado) |
+
+### Tipografía
+- **Fraunces** (serif) → títulos de página y headings de sección: `font-serif`
+- **Inter** (sans) → body, datos, tablas (default en `<body>`)
+- Ambas vía `next/font/google` en `app/layout.tsx` (vars `--font-serif` / `--font-sans`)
+- Cifras en KPIs y columnas numéricas: clase `.tabular` (tabular-nums), definida en `globals.css`
+
+### Primitivos
+`components/ui/index.tsx`: `PageHeader`, `SectionTitle`, `Card`, `KpiCard`,
+`Badge` (prop `tone`: neutral/accent/warn/danger), `FilterButton`, `Button`,
+`Th`, `EmptyState`. Úsalos en vez de re-estilar a mano.
+
+Nota: Tailwind purga clases construidas por interpolación — usa mapas de clases
+literales (ver `ALIGN` en `components/ui/index.tsx`), nunca `` `text-${align}` ``.
 
 ## URLs
 - Producción: https://pet-jagro.vercel.app
 - Repo: https://github.com/intelguy8000/pet_jagro
 
 ## Notas
-- Datos de pedidos/productos/liquidaciones son mock (editar `lib/mockData.ts`)
+- **Política: sólo data real de HGINet, cero mock visible.** Picking, Inventario,
+  Catálogo, Clientes y Cartera leen de HGINet con caché read-through en Neon.
+- `lib/mockData.ts` sigue existiendo pero ya no alimenta ninguna vista.
+  **Pendiente**: `app/api/chat/route.ts` y `lib/ai-functions.ts` todavía importan
+  de él, así que el Chat AI responde sobre datos mock.
 - Feedback sí usa BD real (Neon PostgreSQL)
 - System prompt está en `app/api/chat/route.ts`
 - AI SDK v5 requiere `@ai-sdk/react` separado para hooks de React
