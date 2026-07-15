@@ -190,7 +190,7 @@ export default function ChatWidget() {
           </div>
 
           {/* Messages */}
-          <div className="flex-1 space-y-4 overflow-y-auto bg-cream-deep p-4">
+          <div className="flex-1 space-y-4 overflow-y-auto bg-surface-muted p-4">
             {messages.length === 0 && (
               <>
                 <div className="mt-4 text-center text-sm text-ink-muted">

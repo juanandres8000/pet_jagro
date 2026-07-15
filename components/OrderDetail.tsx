@@ -1,10 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { Order, OrderItem, categoryNames, zoneNames } from '@/types';
+import { Order, OrderItem, categoryNames } from '@/types';
 import BarcodeScanner from './BarcodeScanner';
 import { useProductos } from '@/lib/hooks/useProductos';
-import { Card, SectionTitle, Badge, Button } from '@/components/ui';
+import { Card, SectionTitle, Badge, Button, ZoneBadge } from '@/components/ui';
 
 interface OrderDetailProps {
   order: Order;
@@ -35,16 +35,6 @@ export default function OrderDetail({ order: initialOrder, onBack, onUpdate }: O
       assignedAt: new Date(),
     };
     setOrder(updatedOrder);
-  };
-
-  const handleSendToBilling = () => {
-    const billingOrder = {
-      ...order,
-      status: 'ready_for_billing' as const,
-    };
-    setOrder(billingOrder);
-    onUpdate(billingOrder);
-    setTimeout(() => onBack(), 1000);
   };
 
   const handleStartScanning = (item: OrderItem) => {
@@ -125,7 +115,7 @@ export default function OrderDetail({ order: initialOrder, onBack, onUpdate }: O
                 <div>{order.customer.address}</div>
                 {order.customer.zone && (
                   <div className="mt-2">
-                    <Badge tone="neutral">Zona {zoneNames[order.customer.zone]}</Badge>
+                    <ZoneBadge zone={order.customer.zone} prefix="Zona" />
                   </div>
                 )}
               </div>
@@ -154,7 +144,7 @@ export default function OrderDetail({ order: initialOrder, onBack, onUpdate }: O
                   {Math.round(progress)}%
                 </span>
               </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-cream-deep">
+              <div className="h-1.5 overflow-hidden rounded-full bg-surface-muted">
                 <div
                   className="h-full rounded-full bg-accent transition-all duration-500"
                   style={{ width: `${progress}%` }}
@@ -173,10 +163,12 @@ export default function OrderDetail({ order: initialOrder, onBack, onUpdate }: O
             </Button>
           )}
 
+          {/* `completed` es el estado terminal del picking: no hay transición a
+              facturación porque ese módulo se retiró del producto. */}
           {order.status === 'completed' && (
-            <Button variant="primary" onClick={handleSendToBilling} className="w-full py-3">
-              Pasar a facturación
-            </Button>
+            <div className="rounded border border-accent/15 bg-accent-soft p-4 text-center text-sm text-accent">
+              Picking completado
+            </div>
           )}
         </div>
 

@@ -13,12 +13,14 @@ const config: Config = {
         // Fondo de la aplicación: crema editorial.
         cream: {
           DEFAULT: '#FAF8F5',
-          deep: '#F3F0EA',
         },
         // Superficies elevadas (cards, tablas, sidebar).
+        // Escala de claro a oscuro: surface → cream → surface-hover → surface-muted.
+        // `muted` es un paso más oscuro que `cream` para que se lea también sobre
+        // el fondo de la app (headers de tabla, paneles, tracks de barras).
         surface: {
           DEFAULT: '#FFFFFF',
-          muted: '#FAF8F5',
+          muted: '#F3F0EA',
           hover: '#F5F2EC',
         },
         // Bordes y divisores.
@@ -48,6 +50,23 @@ const config: Config = {
         danger: {
           DEFAULT: '#8C3A32',
           soft: '#F8EDEB',
+        },
+        // Zonas de entrega: 6 tonos apagados derivados de accent/warn/danger y
+        // grises cálidos. Diferencian sin romper la sobriedad; todos son texto
+        // oscuro sobre fondo claro. El mapa zona→clase vive en components/ui.
+        zone: {
+          norte: '#1E4D3B',
+          'norte-soft': '#ECF1EE',
+          sur: '#4A6046',
+          'sur-soft': '#EFF2EE',
+          centro: '#8A6A2F',
+          'centro-soft': '#F7F1E4',
+          oriente: '#8C3A32',
+          'oriente-soft': '#F8EDEB',
+          occidente: '#6B5340',
+          'occidente-soft': '#F4F0EA',
+          extramuros: '#6B6860',
+          'extramuros-soft': '#F2F0EC',
         },
       },
       fontFamily: {

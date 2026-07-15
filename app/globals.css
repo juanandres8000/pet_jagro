@@ -6,9 +6,9 @@
   /* Paleta editorial neutra. Espejo de los tokens de tailwind.config.ts —
      mantener ambos en sync; los componentes usan las clases de Tailwind. */
   --cream: #FAF8F5;
-  --cream-deep: #F3F0EA;
   --surface: #FFFFFF;
   --surface-hover: #F5F2EC;
+  --surface-muted: #F3F0EA;
 
   --line: #E8E4DD;
   --line-strong: #D8D3C9;

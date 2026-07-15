@@ -112,7 +112,7 @@ export default function InventarioView() {
                 </tr>
               ) : (
                 filtered.map(product => (
-                  <tr key={product.id} className="transition-colors hover:bg-surface-muted">
+                  <tr key={product.id} className="transition-colors hover:bg-surface-hover">
                     <td className="px-4 py-3">
                       <div className="text-sm font-medium text-ink">{product.name}</div>
                       <div className="tabular mt-0.5 font-mono text-xs text-ink-faint">{product.barcode}</div>

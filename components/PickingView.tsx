@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Order, zoneNames } from '@/types';
+import { Order } from '@/types';
 import OrderDetail from './OrderDetail';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -18,6 +18,7 @@ import {
   FilterButton,
   Th,
   EmptyState,
+  ZoneBadge,
 } from '@/components/ui';
 
 export default function PickingView() {
@@ -92,8 +93,26 @@ export default function PickingView() {
   const historicosCount = orders.filter(esHistorico).length;
   const visibleOrders = verHistoricos ? orders : orders.filter((o) => !esHistorico(o));
 
-  const pendingOrders = visibleOrders.filter(o => o.status === 'pending');
-  const inProgressOrders = visibleOrders.filter(o => o.status === 'in_progress');
+  // Estados que lista el Picking, en orden de aparición. `completed` es el
+  // estado terminal del flujo; `ready_for_billing` ya no se puede alcanzar
+  // (Facturación se retiró) pero se sigue listando para que los pedidos que
+  // quedaran en ese estado no desaparezcan sin destino.
+  const PICKING_STATUSES = ['in_progress', 'pending', 'completed', 'ready_for_billing'] as const;
+
+  const STATUS_META: Record<
+    (typeof PICKING_STATUSES)[number],
+    { label: string; tone: 'accent' | 'neutral'; fecha: (d: Date) => string }
+  > = {
+    in_progress: { label: 'En proceso', tone: 'accent', fecha: (d) => format(d, 'HH:mm', { locale: es }) },
+    pending: { label: 'Pendiente', tone: 'neutral', fecha: (d) => format(d, 'd MMM HH:mm', { locale: es }) },
+    completed: { label: 'Completado', tone: 'accent', fecha: (d) => format(d, 'd MMM HH:mm', { locale: es }) },
+    ready_for_billing: { label: 'Listo para facturar', tone: 'neutral', fecha: (d) => format(d, 'd MMM HH:mm', { locale: es }) },
+  };
+
+  const byStatus = (s: (typeof PICKING_STATUSES)[number]) => visibleOrders.filter((o) => o.status === s);
+  const pendingOrders = byStatus('pending');
+  const inProgressOrders = byStatus('in_progress');
+  const activeOrders = PICKING_STATUSES.flatMap(byStatus);
 
   if (selectedOrder) {
     return (
@@ -102,11 +121,7 @@ export default function PickingView() {
         onBack={() => setSelectedOrder(null)}
         onUpdate={(updatedOrder) => {
           setOrders((prev) => prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o)));
-          if (updatedOrder.status === 'ready_for_billing') {
-            setSelectedOrder(null);
-          } else {
-            setSelectedOrder(updatedOrder);
-          }
+          setSelectedOrder(updatedOrder);
         }}
       />
     );
@@ -133,7 +148,7 @@ export default function PickingView() {
           <Badge tone="danger">Stock insuficiente</Badge>
         </span>
       )}
-      {order.customer.zone && <Badge tone="neutral">{zoneNames[order.customer.zone]}</Badge>}
+      {order.customer.zone && <ZoneBadge zone={order.customer.zone} />}
     </div>
   );
 
@@ -142,7 +157,7 @@ export default function PickingView() {
     <tr
       key={order.id}
       onClick={() => setSelectedOrder(order)}
-      className="cursor-pointer transition-colors hover:bg-surface-muted"
+      className="cursor-pointer transition-colors hover:bg-surface-hover"
     >
       <td className="px-4 py-4 align-top">
         <span className="tabular font-medium text-ink">{order.orderNumber}</span>
@@ -205,13 +220,13 @@ export default function PickingView() {
               </span>
             )}
             <div className="text-sm text-ink-muted">
-              <span className="tabular">{pendingOrders.length + inProgressOrders.length}</span> total
+              <span className="tabular">{activeOrders.length}</span> total
             </div>
           </div>
         </div>
 
         <Card className="overflow-hidden">
-          {pendingOrders.length === 0 && inProgressOrders.length === 0 ? (
+          {activeOrders.length === 0 ? (
             <EmptyState title="No hay pedidos activos" hint="Los pedidos pendientes aparecerán aquí." />
           ) : (
             <div className="overflow-x-auto">
@@ -226,12 +241,10 @@ export default function PickingView() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
-                  {inProgressOrders.map((order) =>
-                    orderRow(order, 'En proceso', 'accent', format(order.createdAt, 'HH:mm', { locale: es }))
-                  )}
-                  {pendingOrders.map((order) =>
-                    orderRow(order, 'Pendiente', 'neutral', format(order.createdAt, 'd MMM HH:mm', { locale: es }))
-                  )}
+                  {activeOrders.map((order) => {
+                    const meta = STATUS_META[order.status as (typeof PICKING_STATUSES)[number]];
+                    return orderRow(order, meta.label, meta.tone, meta.fecha(order.createdAt));
+                  })}
                 </tbody>
               </table>
             </div>

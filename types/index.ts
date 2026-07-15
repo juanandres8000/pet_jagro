@@ -44,14 +44,8 @@ export const zoneNames: Record<DeliveryZone, string> = {
   extramuros: 'Extramuros'
 };
 
-export const zoneColors: Record<DeliveryZone, string> = {
-  norte: '#3b82f6',      // Azul
-  sur: '#10b981',        // Verde
-  centro: '#f59e0b',     // Naranja
-  oriente: '#8b5cf6',    // Púrpura
-  occidente: '#ec4899',  // Rosa
-  extramuros: '#6b7280'  // Gris
-};
+// El color por zona vive en el design system, no aquí: tokens `zone.*` en
+// tailwind.config.ts, consumidos por <ZoneBadge> en components/ui.
 
 // Estados del pedido
 export type OrderStatus = 'pending' | 'in_progress' | 'completed' | 'ready_for_billing' | 'billed' | 'cancelled';

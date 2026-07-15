@@ -103,7 +103,7 @@ export default function CarteraView({ onVerCliente }: CarteraViewProps) {
                 return (
                   <div key={b.key} className="flex items-center gap-3">
                     <div className="w-16 shrink-0 text-right text-xs font-medium text-ink-muted">{b.label}</div>
-                    <div className="h-6 flex-1 overflow-hidden rounded bg-cream-deep">
+                    <div className="h-6 flex-1 overflow-hidden rounded bg-surface-muted">
                       <div
                         className={`h-full rounded transition-all ${b.bar}`}
                         style={{ width: `${Math.max(pct, bucket.saldo > 0 ? 2 : 0)}%` }}
@@ -139,7 +139,7 @@ export default function CarteraView({ onVerCliente }: CarteraViewProps) {
                 </thead>
                 <tbody className="divide-y divide-line">
                   {resumen.topDeudores.map((d, i) => (
-                    <tr key={d.codigoTercero} className="transition-colors hover:bg-surface-muted">
+                    <tr key={d.codigoTercero} className="transition-colors hover:bg-surface-hover">
                       <td className="px-4 py-3">
                         <div className="text-sm font-medium text-ink">
                           <span className="tabular mr-2 text-ink-faint">{i + 1}.</span>

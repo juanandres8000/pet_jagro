@@ -92,7 +92,7 @@ export default function CatalogoView() {
                 </tr>
               ) : (
                 filtered.map(product => (
-                  <tr key={product.id} className="transition-colors hover:bg-surface-muted">
+                  <tr key={product.id} className="transition-colors hover:bg-surface-hover">
                     <td className="px-4 py-3 text-sm font-medium text-ink">{product.name}</td>
                     <td className="tabular px-4 py-3 font-mono text-xs text-ink-faint">{product.barcode}</td>
                     <td className="px-4 py-3 text-sm text-ink-muted">{categoryNames[product.category]}</td>

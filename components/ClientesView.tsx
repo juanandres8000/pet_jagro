@@ -170,7 +170,7 @@ export default function ClientesView({ initialSearch = '' }: ClientesViewProps) 
                 </tr>
               ) : (
                 filtered.slice(0, MAX_ROWS).map((c) => (
-                  <tr key={c.id} className="transition-colors hover:bg-surface-muted">
+                  <tr key={c.id} className="transition-colors hover:bg-surface-hover">
                     <td className="px-4 py-3">
                       <span className="inline-flex flex-wrap items-center gap-1.5">
                         <span className="text-sm font-medium text-ink">{c.nombre}</span>

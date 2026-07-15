@@ -37,6 +37,12 @@ entrada de nav ni rama de render, así que son inalcanzables. La app es una SPA
 con estado de tab en `app/page.tsx` — no hay rutas de archivo que proteger.
 Integraciones también salió del nav.
 
+Como Facturación ya no existe, **`completed` es el estado terminal del picking**:
+no hay transición a `ready_for_billing`. El Picking lista
+`in_progress → pending → completed → ready_for_billing` (`PICKING_STATUSES` en
+`PickingView`) para que ningún pedido desaparezca de la vista sin destino;
+`ready_for_billing` se conserva sólo como lectura de estados heredados.
+
 ## Chat AI
 - Hook `useChat` de `@ai-sdk/react`
 - Transport: `DefaultChatTransport` con api `/api/chat`
@@ -100,7 +106,8 @@ Tokens en `tailwind.config.ts` (espejados como CSS vars en `app/globals.css`).
 |---|---|---|
 | `cream` | `#FAF8F5` | Fondo de la app |
 | `surface` | `#FFFFFF` | Cards, tablas, sidebar |
-| `surface-muted` | `#FAF8F5` | Headers de tabla, hover de fila |
+| `surface-hover` | `#F5F2EC` | Hover de fila / de botón |
+| `surface-muted` | `#F3F0EA` | Headers de tabla, paneles, tracks de barras |
 | `line` | `#E8E4DD` | Bordes y divisores |
 | `ink` | `#1A1A18` | Texto principal |
 | `ink-muted` | `#6B6860` | Texto secundario |
@@ -108,6 +115,22 @@ Tokens en `tailwind.config.ts` (espejados como CSS vars en `app/globals.css`).
 | `accent` | `#1E4D3B` | Activo, links, botones primarios, KPIs |
 | `warn` | `#8A6A2F` | Alertas medias (ámbar apagado) |
 | `danger` | `#8C3A32` | Alertas severas (rojo apagado) |
+| `zone.*` | — | 6 tonos apagados por zona de entrega (+ `-soft`) |
+
+Escala de superficies, de clara a oscura: `surface` (#FFFFFF) → `cream`
+(#FAF8F5) → `surface-hover` (#F5F2EC) → `surface-muted` (#F3F0EA).
+`surface-muted` es un paso más oscuro que `cream` a propósito, para que se lea
+también sobre el fondo de la app; usa `surface-hover` para hovers, no `muted`.
+
+### Zonas de entrega
+Color por zona: tokens `zone.{norte,sur,centro,oriente,occidente,extramuros}`
+(+ `-soft`) en `tailwind.config.ts`, consumidos por `<ZoneBadge>`. No hay hex
+de zona en componentes ni en `types/`.
+
+**Ojo**: hoy `<ZoneBadge>` no se renderiza nunca con data real — los 145 pedidos
+de HGINet traen `zona.nombre = "GENERAL"`, que `toDeliveryZone`
+(`lib/hgi/adapters/pedidoToOrder.ts`) no mapea a ninguna de las 6 zonas, así que
+`customer.zone` queda `undefined`. Las 6 zonas vienen de la era mock.
 
 ### Tipografía
 - **Fraunces** (serif) → títulos de página y headings de sección: `font-serif`
