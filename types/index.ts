@@ -32,20 +32,12 @@ export const categoryNames: Record<Product['category'], string> = {
   other: 'Otros'
 };
 
-// Zonas de entrega
+// Zonas de entrega. Herencia de la era mock: HGINet sólo trae zona "GENERAL",
+// que no mapea a ninguna de estas, así que `customer.zone` siempre es undefined
+// con data real y la UI dejó de mostrar zonas. El tipo sobrevive porque
+// mockData y lib/ai-functions (chat AI) todavía lo usan. Si algún día HGINet
+// trae zonas reales, la UI se reintroduce con data.
 export type DeliveryZone = 'norte' | 'sur' | 'centro' | 'oriente' | 'occidente' | 'extramuros';
-
-export const zoneNames: Record<DeliveryZone, string> = {
-  norte: 'Norte',
-  sur: 'Sur',
-  centro: 'Centro',
-  oriente: 'Oriente',
-  occidente: 'Occidente',
-  extramuros: 'Extramuros'
-};
-
-// El color por zona vive en el design system, no aquí: tokens `zone.*` en
-// tailwind.config.ts, consumidos por <ZoneBadge> en components/ui.
 
 // Estados del pedido
 export type OrderStatus = 'pending' | 'in_progress' | 'completed' | 'ready_for_billing' | 'billed' | 'cancelled';

@@ -18,7 +18,6 @@ import {
   FilterButton,
   Th,
   EmptyState,
-  ZoneBadge,
 } from '@/components/ui';
 
 export default function PickingView() {
@@ -148,7 +147,6 @@ export default function PickingView() {
           <Badge tone="danger">Stock insuficiente</Badge>
         </span>
       )}
-      {order.customer.zone && <ZoneBadge zone={order.customer.zone} />}
     </div>
   );
 

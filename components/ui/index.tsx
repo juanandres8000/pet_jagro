@@ -1,7 +1,6 @@
 'use client';
 
 import { ReactNode } from 'react';
-import { DeliveryZone, zoneNames } from '@/types';
 
 /** Título de página en serif + subtítulo secundario. */
 export function PageHeader({
@@ -79,27 +78,6 @@ export function KpiCard({
       )}
       {hint && <div className="mt-2 text-xs text-ink-faint">{hint}</div>}
     </div>
-  );
-}
-
-// Mapa zona→clases. Literales por el purge de Tailwind (ver nota en ALIGN).
-const ZONE_CLASSES: Record<DeliveryZone, string> = {
-  norte: 'bg-zone-norte-soft text-zone-norte border-zone-norte/15',
-  sur: 'bg-zone-sur-soft text-zone-sur border-zone-sur/15',
-  centro: 'bg-zone-centro-soft text-zone-centro border-zone-centro/15',
-  oriente: 'bg-zone-oriente-soft text-zone-oriente border-zone-oriente/15',
-  occidente: 'bg-zone-occidente-soft text-zone-occidente border-zone-occidente/15',
-  extramuros: 'bg-zone-extramuros-soft text-zone-extramuros border-zone-extramuros/15',
-};
-
-/** Badge de zona de entrega: cada zona con su tono apagado propio. */
-export function ZoneBadge({ zone, prefix }: { zone: DeliveryZone; prefix?: string }) {
-  return (
-    <span
-      className={`inline-flex items-center whitespace-nowrap rounded border px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide ${ZONE_CLASSES[zone]}`}
-    >
-      {prefix ? `${prefix} ${zoneNames[zone]}` : zoneNames[zone]}
-    </span>
   );
 }
 

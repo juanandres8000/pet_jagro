@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Order, OrderItem, categoryNames } from '@/types';
 import BarcodeScanner from './BarcodeScanner';
 import { useProductos } from '@/lib/hooks/useProductos';
-import { Card, SectionTitle, Badge, Button, ZoneBadge } from '@/components/ui';
+import { Card, SectionTitle, Badge, Button } from '@/components/ui';
 
 interface OrderDetailProps {
   order: Order;
@@ -111,14 +111,7 @@ export default function OrderDetail({ order: initialOrder, onBack, onUpdate }: O
 
             <div className="mt-4 space-y-3 text-sm text-ink-muted">
               <div className="tabular">{order.customer.phone}</div>
-              <div>
-                <div>{order.customer.address}</div>
-                {order.customer.zone && (
-                  <div className="mt-2">
-                    <ZoneBadge zone={order.customer.zone} prefix="Zona" />
-                  </div>
-                )}
-              </div>
+              <div>{order.customer.address}</div>
             </div>
 
             <div className="mt-6 border-t border-line pt-6">

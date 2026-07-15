@@ -115,22 +115,23 @@ Tokens en `tailwind.config.ts` (espejados como CSS vars en `app/globals.css`).
 | `accent` | `#1E4D3B` | Activo, links, botones primarios, KPIs |
 | `warn` | `#8A6A2F` | Alertas medias (ámbar apagado) |
 | `danger` | `#8C3A32` | Alertas severas (rojo apagado) |
-| `zone.*` | — | 6 tonos apagados por zona de entrega (+ `-soft`) |
 
 Escala de superficies, de clara a oscura: `surface` (#FFFFFF) → `cream`
 (#FAF8F5) → `surface-hover` (#F5F2EC) → `surface-muted` (#F3F0EA).
 `surface-muted` es un paso más oscuro que `cream` a propósito, para que se lea
 también sobre el fondo de la app; usa `surface-hover` para hovers, no `muted`.
 
-### Zonas de entrega
-Color por zona: tokens `zone.{norte,sur,centro,oriente,occidente,extramuros}`
-(+ `-soft`) en `tailwind.config.ts`, consumidos por `<ZoneBadge>`. No hay hex
-de zona en componentes ni en `types/`.
+### Zonas de entrega: retiradas de la UI
+No hay badge de zona en ningún módulo. Las 6 `DeliveryZone` son herencia de la
+era mock: los 145 pedidos de HGINet traen `zona.nombre = "GENERAL"`, que
+`toDeliveryZone` (`lib/hgi/adapters/pedidoToOrder.ts`) no mapea, así que
+`customer.zone` es siempre `undefined` con data real.
 
-**Ojo**: hoy `<ZoneBadge>` no se renderiza nunca con data real — los 145 pedidos
-de HGINet traen `zona.nombre = "GENERAL"`, que `toDeliveryZone`
-(`lib/hgi/adapters/pedidoToOrder.ts`) no mapea a ninguna de las 6 zonas, así que
-`customer.zone` queda `undefined`. Las 6 zonas vienen de la era mock.
+Lo que queda y por qué: el tipo `DeliveryZone` y los campos `customer.zone` /
+`Messenger.assignedZone` siguen existiendo porque `lib/mockData.ts` y
+`lib/ai-functions.ts` (chat AI) los leen. Cuando el chat migre a data real,
+son candidatos a borrarse con ellos. El adaptador conserva el mapeo por si
+HGINet algún día envía zonas de verdad; ahí se reintroduce la UI.
 
 ### Tipografía
 - **Fraunces** (serif) → títulos de página y headings de sección: `font-serif`
