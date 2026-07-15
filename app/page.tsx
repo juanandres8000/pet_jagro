@@ -7,7 +7,6 @@ import InventarioView from '@/components/InventarioView';
 import CatalogoView from '@/components/CatalogoView';
 import ClientesView from '@/components/ClientesView';
 import CarteraView from '@/components/CarteraView';
-import ChatWidget from '@/components/ChatWidget';
 
 type Tab = 'picking' | 'inventario' | 'catalogo' | 'clientes' | 'cartera';
 
@@ -161,8 +160,6 @@ export default function Home() {
           </div>
         </div>
       </main>
-
-      <ChatWidget />
     </div>
   );
 }

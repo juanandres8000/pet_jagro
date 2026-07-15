@@ -25,7 +25,7 @@ Nav agrupado en 3 secciones (`MENU_GROUPS` en `app/page.tsx`):
 - **COMERCIAL**: Clientes
 - **FINANZAS**: Cartera
 
-Más el **Chat AI** (widget flotante, GPT-4o).
+El **Chat AI** existe pero está **oculto** — ver "Chat AI" más abajo.
 
 Inventario y Catálogo son dos lecturas de la misma fuente (`/api/productos`) vía
 el hook compartido `lib/hooks/useProductos.ts`. Sustituyeron a la antigua
@@ -51,7 +51,28 @@ no hay transición a `ready_for_billing`. El Picking lista
 `PickingView`) para que ningún pedido desaparezca de la vista sin destino;
 `ready_for_billing` se conserva sólo como lectura de estados heredados.
 
-## Chat AI
+## Chat AI — OCULTO INTENCIONALMENTE
+
+**No se renderiza.** `app/page.tsx` ya no monta `<ChatWidget />`, así que el
+botón flotante no existe en el UI.
+
+**Por qué**: el chat responde sobre `lib/mockData.ts` — `app/api/chat/route.ts`
+y `lib/ai-functions.ts` importan de ahí. Con los 5 módulos ya sobre data real de
+HGINet, era lo único que quedaba contradiciendo la política de **cero mock
+visible**: un asistente inventando pedidos y stock junto a tablas con cifras
+reales es peor que no tener asistente. Se oculta en vez de borrarse porque la
+migración a data real está planeada para el próximo sprint.
+
+**Nada se borró**: `components/ChatWidget.tsx`, `app/api/chat/route.ts` y
+`lib/ai-functions.ts` siguen en el repo y compilan. `/api/chat` sigue siendo una
+ruta viva (sin UI que la llame). Para reactivarlo: volver a montar
+`<ChatWidget />` en `app/page.tsx` — pero **primero** migrar `ai-functions` a
+HGINet, o el mock vuelve a la pantalla.
+
+Detalle a limpiar en esa migración: el quick chip "¿Pedidos para zona Norte?"
+(`ChatWidget.tsx`) asume zonas que HGINet no trae — ver "Zonas de entrega".
+
+### Implementación (para el sprint de migración)
 - Hook `useChat` de `@ai-sdk/react`
 - Transport: `DefaultChatTransport` con api `/api/chat`
 - API en `/api/chat/route.ts`
@@ -170,9 +191,11 @@ literales (ver `ALIGN` en `components/ui/index.tsx`), nunca `` `text-${align}` `
 ## Notas
 - **Política: sólo data real de HGINet, cero mock visible.** Picking, Inventario,
   Catálogo, Clientes y Cartera leen de HGINet con caché read-through en Neon.
-- `lib/mockData.ts` sigue existiendo pero ya no alimenta ninguna vista.
-  **Pendiente**: `app/api/chat/route.ts` y `lib/ai-functions.ts` todavía importan
-  de él, así que el Chat AI responde sobre datos mock.
+- **Cero mock visible: cumplido.** `lib/mockData.ts` ya no alimenta nada que se
+  renderice. Sus últimos consumidores son `app/api/chat/route.ts` y
+  `lib/ai-functions.ts`, y por eso el Chat AI está oculto (ver "Chat AI").
+  Cuando el chat migre a HGINet, `mockData.ts` queda sin consumidores y se puede
+  borrar — junto con `DeliveryZone` / `customer.zone` / `Messenger.assignedZone`.
 - Feedback sí usa BD real (Neon PostgreSQL)
 - System prompt está en `app/api/chat/route.ts`
 - AI SDK v5 requiere `@ai-sdk/react` separado para hooks de React
