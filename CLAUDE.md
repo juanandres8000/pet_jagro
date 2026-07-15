@@ -63,11 +63,22 @@ visible**: un asistente inventando pedidos y stock junto a tablas con cifras
 reales es peor que no tener asistente. Se oculta en vez de borrarse porque la
 migración a data real está planeada para el próximo sprint.
 
+**La ruta también está cerrada**: `/api/chat` responde **503** con
+`{ ok: false, mensaje: 'Chat deshabilitado temporalmente' }` sin invocar GPT-4o.
+Quitar el widget sólo quitaba la UI; el endpoint seguía siendo público y
+cualquiera podía gastar tokens para recibir datos inventados. El guard corre
+antes de leer el body, así que no se consume nada.
+
 **Nada se borró**: `components/ChatWidget.tsx`, `app/api/chat/route.ts` y
-`lib/ai-functions.ts` siguen en el repo y compilan. `/api/chat` sigue siendo una
-ruta viva (sin UI que la llame). Para reactivarlo: volver a montar
-`<ChatWidget />` en `app/page.tsx` — pero **primero** migrar `ai-functions` a
-HGINet, o el mock vuelve a la pantalla.
+`lib/ai-functions.ts` siguen en el repo y compilan. El handler original está
+íntegro debajo del guard.
+
+**Para reactivarlo** (sprint de migración), en este orden:
+1. Migrar `lib/ai-functions.ts` y el system prompt a HGINet — si no, el mock
+   vuelve a la pantalla.
+2. `CHAT_ENABLED=true` en el entorno (Vercel). Sin la variable la ruta está
+   apagada: el default es 503, no hace falta tocar nada para mantenerlo off.
+3. Volver a montar `<ChatWidget />` en `app/page.tsx`.
 
 Detalle a limpiar en esa migración: el quick chip "¿Pedidos para zona Norte?"
 (`ChatWidget.tsx`) asume zonas que HGINet no trae — ver "Zonas de entrega".
@@ -123,6 +134,14 @@ DATABASE_URL=postgresql://...@...neon.tech/...
 **Notas:**
 - `OPEN_AI_KEY` usa guión bajo, no `OPENAI_API_KEY`
 - `DATABASE_URL` es la connection string de Neon PostgreSQL
+- `CHAT_ENABLED` apaga/enciende `/api/chat`. **Sin definir = apagado (503)**,
+  que es el estado actual a propósito (ver "Chat AI"). Sólo `CHAT_ENABLED=true`
+  la reactiva.
+- Las credenciales de HGINet (`HGI_BASE_URL`, `HGI_USUARIO`, `HGI_CLAVE`,
+  `HGI_COD_COMPANIA`, `HGI_COD_EMPRESA`) viven **sólo en Vercel**. En local
+  `.env.local` suele tener nada más `DATABASE_URL`, así que las vistas leen del
+  snapshot de Neon que puebla el cron: los rebuilds contra HGINet no se pueden
+  ejercitar localmente.
 
 ## Tema Visual
 Estilo editorial/corporativo sobrio. **Un solo acento: verde oscuro.** El azul
