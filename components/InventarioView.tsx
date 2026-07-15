@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { categoryNames } from '@/types';
-import { useProductos, formatPrice } from '@/lib/hooks/useProductos';
+import { useProductos } from '@/lib/hooks/useProductos';
+import { formatPrice, kpiMoney } from '@/lib/format';
 import { PageHeader, KpiCard, Card, Badge, FilterButton, Th, EmptyState, Tone } from '@/components/ui';
 
 type StockFilter = 'all' | 'low' | 'out';
@@ -48,7 +49,7 @@ export default function InventarioView() {
         <KpiCard label="Referencias" value={products.length} />
         <KpiCard label="Stock bajo" value={lowStockCount} tone={lowStockCount > 0 ? 'warn' : 'neutral'} />
         <KpiCard label="Agotados" value={outOfStockCount} tone={outOfStockCount > 0 ? 'danger' : 'neutral'} />
-        <KpiCard label="Valor total" value={formatPrice(totalValue)} tone="accent" />
+        <KpiCard label="Valor total" {...kpiMoney(totalValue)} tone="accent" />
       </div>
 
       <Card>

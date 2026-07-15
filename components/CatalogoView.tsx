@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { categoryNames } from '@/types';
-import { useProductos, formatPrice } from '@/lib/hooks/useProductos';
+import { useProductos } from '@/lib/hooks/useProductos';
+import { formatPrice, kpiMoney } from '@/lib/format';
 import { PageHeader, KpiCard, Card, Badge, Th, EmptyState } from '@/components/ui';
 
 export default function CatalogoView() {
@@ -35,7 +36,7 @@ export default function CatalogoView() {
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
         <KpiCard label="Referencias" value={products.length} />
         <KpiCard label="Categorías" value={categories.length} />
-        <KpiCard label="Precio promedio" value={formatPrice(avgPrice)} tone="accent" />
+        <KpiCard label="Precio promedio" {...kpiMoney(avgPrice)} tone="accent" />
       </div>
 
       <Card>

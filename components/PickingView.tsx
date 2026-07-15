@@ -19,6 +19,7 @@ import {
   Th,
   EmptyState,
 } from '@/components/ui';
+import { formatPrice, kpiMoney } from '@/lib/format';
 
 export default function PickingView() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -76,14 +77,6 @@ export default function PickingView() {
       cancelled = true;
     };
   }, []);
-
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('es-CO', {
-      style: 'currency',
-      currency: 'COP',
-      minimumFractionDigits: 0,
-    }).format(price);
-  };
 
   // Corte de "históricos": pedidos con fecha anterior a 2021-01-01 se consideran
   // stale y se ocultan cuando el toggle "Ver históricos" está apagado.
@@ -199,8 +192,8 @@ export default function PickingView() {
         <KpiCard label="Pendientes" value={pendingOrders.length} />
         <KpiCard label="En curso" value={inProgressOrders.length} tone="accent" />
         <KpiCard
+          {...kpiMoney(pendingOrders.reduce((sum, o) => sum + o.totalValue, 0))}
           label="Valor total"
-          value={formatPrice(pendingOrders.reduce((sum, o) => sum + o.totalValue, 0))}
           hint="Suma de pedidos pendientes"
         />
       </div>

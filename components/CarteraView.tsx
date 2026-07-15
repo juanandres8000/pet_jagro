@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import type { CarteraResumen, BucketKey } from '@/lib/hgi/mappers/cartera';
 import { PageHeader, KpiCard, Card, Badge, Th, Tone } from '@/components/ui';
+import { formatPrice, kpiMoney } from '@/lib/format';
 
 interface CarteraViewProps {
   /** Navega a la vista de Clientes con el tercero prefiltrado. */
@@ -17,9 +18,6 @@ const BUCKETS: Array<{ key: BucketKey; label: string; bar: string }> = [
   { key: '61-90', label: '61–90 d', bar: 'bg-warn' },
   { key: '90+', label: '90+ d', bar: 'bg-danger' },
 ];
-
-const fmtCOP = (v: number) =>
-  new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(v);
 
 export default function CarteraView({ onVerCliente }: CarteraViewProps) {
   const [resumen, setResumen] = useState<CarteraResumen | null>(null);
@@ -86,8 +84,8 @@ export default function CarteraView({ onVerCliente }: CarteraViewProps) {
         <>
           {/* KPI cards */}
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            <KpiCard label="Total abierto" value={fmtCOP(resumen.totalAbierto)} />
-            <KpiCard label="Total vencido" value={fmtCOP(resumen.totalVencido)} tone="danger" />
+            <KpiCard label="Total abierto" {...kpiMoney(resumen.totalAbierto)} />
+            <KpiCard label="Total vencido" {...kpiMoney(resumen.totalVencido)} tone="danger" />
             <KpiCard label="% en 90+ días" value={`${(resumen.pct90 * 100).toFixed(1)}%`} tone="danger" />
             <KpiCard label="Terceros con saldo" value={resumen.terceros.toLocaleString('es-CO')} tone="accent" />
           </div>
@@ -110,7 +108,7 @@ export default function CarteraView({ onVerCliente }: CarteraViewProps) {
                       />
                     </div>
                     <div className="tabular w-40 shrink-0 text-right text-xs text-ink">
-                      {fmtCOP(bucket.saldo)}
+                      {formatPrice(bucket.saldo)}
                       <span className="ml-1 text-ink-faint">
                         ({pctTotal.toFixed(0)}% · {bucket.docs})
                       </span>
@@ -147,13 +145,13 @@ export default function CarteraView({ onVerCliente }: CarteraViewProps) {
                         </div>
                         <div className="tabular mt-0.5 font-mono text-xs text-ink-faint">{d.codigoTercero}</div>
                       </td>
-                      <td className="tabular px-4 py-3 text-right text-sm text-ink">{fmtCOP(d.saldoTotal)}</td>
+                      <td className="tabular px-4 py-3 text-right text-sm text-ink">{formatPrice(d.saldoTotal)}</td>
                       <td
                         className={`tabular px-4 py-3 text-right text-sm font-semibold ${
                           d.saldoVencido > 0 ? 'text-danger' : 'text-ink-muted'
                         }`}
                       >
-                        {d.saldoVencido > 0 ? fmtCOP(d.saldoVencido) : '—'}
+                        {d.saldoVencido > 0 ? formatPrice(d.saldoVencido) : '—'}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <Badge tone={moraTone(d.diasMaxMora)}>

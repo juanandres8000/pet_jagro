@@ -148,8 +148,21 @@ export function mapProducto(p: HgiProducto, opts: MapOptions = {}, saldo?: Saldo
 }
 
 /**
+ * Códigos comodín de HGINet: registros de sistema, no productos reales.
+ * El código 0 ("GENERAL") es un cajón de sastre del ERP; aparecería en Inventario
+ * y Catálogo e inflaría los contadores de referencias y agotados.
+ */
+const CODIGOS_COMODIN = new Set(['0']);
+
+const esComodin = (p: HgiProducto) => CODIGOS_COMODIN.has(str(p.Codigo).trim());
+
+/**
  * Mapea el array de Productos de HGINet → ProductoDTO[], cruzando con el inventario.
- * Filtra Vigente=1 por defecto. Tolera array vacío/nulo y mapa de inventario ausente.
+ * Filtra Vigente=1 por defecto y descarta los comodines del ERP. Tolera array
+ * vacío/nulo y mapa de inventario ausente.
+ *
+ * Éste es el punto único que alimenta el snapshot de catálogo (y por tanto
+ * Inventario y Catálogo), así que filtrar aquí basta para todas las vistas.
  *
  * @param inventario Map<CodigoProducto, SaldoProducto>. Si se omite (p.ej. Inventario
  *                   falló), todos los productos quedan con stock 0 sin romper el catálogo.
@@ -163,6 +176,7 @@ export function mapProductos(
   const soloVigentes = opts.soloVigentes ?? true;
   return raw
     .filter((p): p is HgiProducto => !!p && typeof p === 'object')
+    .filter((p) => !esComodin(p))
     .filter((p) => (soloVigentes ? flag(p.Vigente) : true))
     .map((p) => mapProducto(p, opts, inventario?.get(str(p.Codigo))));
 }

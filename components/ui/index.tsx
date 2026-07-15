@@ -60,17 +60,23 @@ export function KpiCard({
   delta,
   tone = 'neutral',
   hint,
+  title,
 }: {
   label: string;
   value: ReactNode;
   delta?: string;
   tone?: Tone;
   hint?: string;
+  /** Valor completo cuando `value` viene abreviado (ver kpiMoney en lib/format). */
+  title?: string;
 }) {
   return (
     <div className="rounded-lg border border-line bg-surface p-6">
       <div className="text-xs font-medium uppercase tracking-wider text-ink-muted">{label}</div>
-      <div className={`mt-3 tabular font-serif text-3xl font-semibold ${TONE_TEXT[tone]}`}>
+      <div
+        title={title}
+        className={`mt-3 tabular font-serif text-3xl font-semibold ${TONE_TEXT[tone]}`}
+      >
         {value}
       </div>
       {delta && (
