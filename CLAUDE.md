@@ -8,7 +8,7 @@ Sistema de gestión de picking y distribución para productos veterinarios. Demo
 - TypeScript
 - Tailwind CSS
 - Vercel AI SDK v5 + OpenAI GPT-4o
-- Neon PostgreSQL (feedback)
+- Supabase PostgreSQL (feedback, token de HGINet, snapshots) vía `postgres.js`
 - Deploy: Vercel
 
 ## Archivos Clave
@@ -16,7 +16,8 @@ Sistema de gestión de picking y distribución para productos veterinarios. Demo
 - `app/api/feedback/route.ts` → API de feedback (GET/POST)
 - `components/ChatWidget.tsx` → Widget de chat con useChat hook
 - `lib/mockData.ts` → Datos simulados (orders, products, deliveries)
-- `lib/db.ts` → Conexión lazy a Neon PostgreSQL
+- `lib/pg.ts` → Cliente Postgres compartido (postgres.js). **Único punto de conexión**
+- `lib/db.ts` → Conexión lazy; delega en `lib/pg.ts`
 - `app/globals.css` → Tema azul pastel
 
 ## Módulos
@@ -36,7 +37,7 @@ los códigos de `CODIGOS_COMODIN` — hoy sólo el `0` ("GENERAL"), un cajón de
 sastre de HGINet que no es un producto real. Es el punto único que alimenta el
 snapshot de catálogo, así que filtrar ahí cubre Inventario y Catálogo a la vez.
 Ojo: el filtro corre al **construir** el snapshot, no al leerlo — el catálogo
-cacheado en Neon sigue trayendo GENERAL hasta el siguiente rebuild (TTL de
+cacheado en Supabase sigue trayendo GENERAL hasta el siguiente rebuild (TTL de
 `HGI_CATALOG_TTL_MIN`, 15 min por defecto, o el cron de prewarm).
 
 ### Módulos retirados
@@ -101,7 +102,7 @@ Detalle a limpiar en esa migración: el quick chip "¿Pedidos para zona Norte?"
 
 ### Feedback System
 - Botones 👍👎 debajo de cada respuesta del asistente
-- Se guarda en Neon PostgreSQL tabla `chat_feedback`
+- Se guarda en Supabase PostgreSQL tabla `chat_feedback`
 - API `/api/feedback`:
   - `POST`: guarda feedback (messageId, userMessage, assistantResponse, rating)
   - `GET`: lista últimos 50 feedbacks
@@ -113,7 +114,43 @@ Detalle a limpiar en esa migración: el quick chip "¿Pedidos para zona Norte?"
 - Se actualiza al dar feedback
 - Tooltip muestra total de valoraciones
 
-## Base de Datos (Neon PostgreSQL)
+## Base de Datos (Supabase PostgreSQL)
+
+Proyecto Supabase `pet-jagro` (ref `fxsbraeqgxlcdlpwtgdr`, región `us-east-1`,
+PG 17). Migró desde Neon; **Neon quedó abandonado, no se toca**.
+
+### Driver: postgres.js, no @neondatabase/serverless
+`lib/pg.ts` es el **único punto de conexión** — `getSql()` memoizado a nivel de
+módulo. El resto (`lib/db.ts`, `lib/hgi/tokenStore.ts`, `lib/hgi/snapshotStore.ts`,
+`app/api/feedback/route.ts`) lo importa. La interfaz es la misma que la de
+`neon()`: tagged template que devuelve un array de filas.
+
+Tres cosas que **no** son cosméticas y no deben tocarse:
+
+- **El memo es obligatorio.** `neon()` hablaba HTTP y era stateless: crear un
+  cliente por llamada salía gratis. postgres.js abre TCP — un pool por
+  invocación agota el pooler. Un cliente por lambda (`max: 1`).
+- **`prepare: false` es obligatorio.** El pooler de Supabase en modo
+  *transaction* (6543) no soporta prepared statements. Sin esto los queries
+  revientan con `prepared statement ... already exists`.
+- **`timestamptz` llega como `Date`**, no como string (Neon devolvía string).
+  `new Date(...)` traga ambos, pero los tipos en `tokenStore`/`snapshotStore`
+  dicen `string | Date` a propósito.
+
+Ya no hace falta `fetchOptions: { cache: 'no-store' }`: existía porque el driver
+de Neon iba por `fetch` y Next.js cachea `fetch` por defecto. Sobre TCP no aplica.
+
+Cualquier ruta que toque la BD debe declarar `export const runtime = 'nodejs'`
+— postgres.js abre TCP y no corre en edge.
+
+**Trampa al comentar queries**: un `//` dentro de un `` sql`...` `` viaja como
+texto a Postgres y da `syntax error`. `tsc` y `next build` no lo detectan (es
+texto dentro de un string). Los comentarios van **arriba** del template.
+
+### Tablas
+`hgi_token` (001), `hgi_catalog_snapshot` (002, huérfana desde la 003),
+`hgi_snapshot` (003), y `chat_feedback` (init-on-use, sin migración):
+
 ```sql
 CREATE TABLE chat_feedback (
   id SERIAL PRIMARY KEY,
@@ -125,22 +162,34 @@ CREATE TABLE chat_feedback (
 );
 ```
 - Conexión lazy en `lib/db.ts` para evitar errores en build
+- Las migraciones son idempotentes (`IF NOT EXISTS` / `ON CONFLICT DO NOTHING`)
 
 ## Variables de Entorno
 ```
 OPEN_AI_KEY=sk-proj-...
-DATABASE_URL=postgresql://...@...neon.tech/...
+DATABASE_URL=postgresql://postgres.<PROJECT_REF>:<PASSWORD>@aws-0-us-east-1.pooler.supabase.com:6543/postgres
 ```
 **Notas:**
 - `OPEN_AI_KEY` usa guión bajo, no `OPENAI_API_KEY`
-- `DATABASE_URL` es la connection string de Neon PostgreSQL
+- `DATABASE_URL` es la connection string de Supabase. **Usa siempre el pooler**,
+  no el host directo. Dos detalles que el dashboard hace fácil equivocar:
+  - **Host**: `aws-0-us-east-1.pooler.supabase.com`. El host directo
+    (`db.<PROJECT_REF>.supabase.co`) es **IPv6-only** y las lambdas de Vercel
+    tienen egress IPv4 → no resuelve. Ojo: es `aws-0`, no `aws-1`
+    (`aws-1` responde `tenant/user not found`).
+  - **Usuario**: `postgres.<PROJECT_REF>`, no `postgres` a secas. El pooler
+    (Supavisor) enruta por el tenant que va en el usuario.
+  - **Puertos**: `6543` = transaction mode → es el que usan la app y Vercel.
+    `5432` sobre el mismo host = session mode → úsalo para migraciones (DDL
+    multi-sentencia).
+  - Si la contraseña trae `@ : / ?`, URL-encódala.
 - `CHAT_ENABLED` apaga/enciende `/api/chat`. **Sin definir = apagado (503)**,
   que es el estado actual a propósito (ver "Chat AI"). Sólo `CHAT_ENABLED=true`
   la reactiva.
 - Las credenciales de HGINet (`HGI_BASE_URL`, `HGI_USUARIO`, `HGI_CLAVE`,
   `HGI_COD_COMPANIA`, `HGI_COD_EMPRESA`) viven **sólo en Vercel**. En local
   `.env.local` suele tener nada más `DATABASE_URL`, así que las vistas leen del
-  snapshot de Neon que puebla el cron: los rebuilds contra HGINet no se pueden
+  snapshot de Supabase que puebla el cron: los rebuilds contra HGINet no se pueden
   ejercitar localmente.
 
 ## Tema Visual
@@ -209,13 +258,13 @@ literales (ver `ALIGN` en `components/ui/index.tsx`), nunca `` `text-${align}` `
 
 ## Notas
 - **Política: sólo data real de HGINet, cero mock visible.** Picking, Inventario,
-  Catálogo, Clientes y Cartera leen de HGINet con caché read-through en Neon.
+  Catálogo, Clientes y Cartera leen de HGINet con caché read-through en Supabase.
 - **Cero mock visible: cumplido.** `lib/mockData.ts` ya no alimenta nada que se
   renderice. Sus últimos consumidores son `app/api/chat/route.ts` y
   `lib/ai-functions.ts`, y por eso el Chat AI está oculto (ver "Chat AI").
   Cuando el chat migre a HGINet, `mockData.ts` queda sin consumidores y se puede
   borrar — junto con `DeliveryZone` / `customer.zone` / `Messenger.assignedZone`.
-- Feedback sí usa BD real (Neon PostgreSQL)
+- Feedback sí usa BD real (Supabase PostgreSQL)
 - System prompt está en `app/api/chat/route.ts`
 - AI SDK v5 requiere `@ai-sdk/react` separado para hooks de React
 - La tabla `chat_feedback` se crea automáticamente si no existe
