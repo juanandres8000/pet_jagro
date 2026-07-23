@@ -56,9 +56,15 @@ export async function writeSnapshot<T>(
 ): Promise<Date> {
   await ensureSnapshotTable();
   const sql = getDb();
+  // sql.json() — NO `${JSON.stringify(x)}::jsonb`. postgres.js serializa el string
+  // otra vez, así que ese patrón guarda un jsonb de tipo "string" (doble
+  // codificación) en vez de un array. readSnapshot exige Array.isArray(data), así
+  // que la caché fallaba SIEMPRE y cada request reconstruía contra HGINet.
+  // Con el driver de Neon el patrón viejo sí producía un array; es un cambio de
+  // comportamiento del driver que tsc y next build no detectan.
   const rows = (await sql`
     INSERT INTO hgi_snapshot (dataset, data, built_at, source_counts)
-    VALUES (${dataset}, ${JSON.stringify(data)}::jsonb, NOW(), ${JSON.stringify(sourceCounts)}::jsonb)
+    VALUES (${dataset}, ${sql.json(data as never)}, NOW(), ${sql.json(sourceCounts as never)})
     ON CONFLICT (dataset) DO UPDATE
       SET data = EXCLUDED.data,
           built_at = EXCLUDED.built_at,
