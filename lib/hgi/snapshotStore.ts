@@ -1,20 +1,12 @@
-import { neon } from '@neondatabase/serverless';
+import { getSql as getDb } from '../pg';
 
 /**
- * Caché read-through generalizada en Neon (tabla keyed-by-dataset).
+ * Caché read-through generalizada en Postgres (tabla keyed-by-dataset).
  * Equivale a migrations/003_hgi_snapshot.sql. Sirve para cachear distintos
  * datasets (catálogo, clientes, …) con el mismo patrón TTL + serve-stale.
  */
 
 export type Dataset = 'catalog' | 'clients' | 'pedidos' | 'cartera';
-
-// cache: 'no-store' — el driver de Neon usa fetch y Next.js lo cachea por defecto.
-function getDb() {
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL is not configured');
-  }
-  return neon(process.env.DATABASE_URL, { fetchOptions: { cache: 'no-store' } });
-}
 
 export interface Snapshot<T> {
   data: T[];
@@ -41,9 +33,11 @@ async function ensureSnapshotTable(): Promise<void> {
 export async function readSnapshot<T>(dataset: Dataset): Promise<Snapshot<T> | null> {
   await ensureSnapshotTable();
   const sql = getDb();
+  // postgres.js decodifica timestamptz a Date (el driver de Neon devolvía string).
+  // new Date(...) acepta ambos, pero el tipo refleja lo que llega de verdad.
   const rows = (await sql`
     SELECT data, built_at, source_counts FROM hgi_snapshot WHERE dataset = ${dataset}
-  `) as Array<{ data: unknown; built_at: string | null; source_counts: unknown }>;
+  `) as unknown as Array<{ data: unknown; built_at: string | Date | null; source_counts: unknown }>;
 
   const row = rows[0];
   if (!row || !row.data || !row.built_at || !Array.isArray(row.data)) return null;
@@ -70,6 +64,6 @@ export async function writeSnapshot<T>(
           built_at = EXCLUDED.built_at,
           source_counts = EXCLUDED.source_counts
     RETURNING built_at
-  `) as Array<{ built_at: string }>;
+  `) as unknown as Array<{ built_at: string | Date }>;
   return new Date(rows[0].built_at);
 }

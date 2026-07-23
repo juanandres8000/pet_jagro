@@ -1,23 +1,12 @@
-import { neon } from '@neondatabase/serverless';
+import { getSql as getDb } from '../pg';
 
 /**
- * Caché/candado compartido del token de HGINet en Neon.
+ * Caché/candado compartido del token de HGINet en Postgres (Supabase).
  *
  * HGINet solo permite un token vigente por usuario, y las funciones serverless
  * de Vercel no comparten memoria. Esta tabla single-row (id = 1) es el punto
  * único de verdad para el token entre todas las invocaciones.
  */
-
-// Conexión lazy (mismo patrón que lib/db.ts) para no romper el build.
-// IMPORTANTE: cache: 'no-store'. El driver de Neon consulta vía fetch, y Next.js
-// cachea fetch por defecto; sin esto, el token cacheado en BD se leería obsoleto
-// (p.ej. una fila NULL inicial persistiría aunque la BD ya tenga token válido).
-function getDb() {
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL is not configured');
-  }
-  return neon(process.env.DATABASE_URL, { fetchOptions: { cache: 'no-store' } });
-}
 
 export interface StoredToken {
   jwt: string;
@@ -43,13 +32,14 @@ async function ensureTokenTable(): Promise<void> {
   tableReady = true;
 }
 
-/** Lee el token cacheado de Neon. Devuelve null si no hay token guardado. */
+/** Lee el token cacheado. Devuelve null si no hay token guardado. */
 export async function readToken(): Promise<StoredToken | null> {
   await ensureTokenTable();
   const sql = getDb();
+  // timestamptz llega como Date con postgres.js (el driver de Neon devolvía string).
   const rows = (await sql`
     SELECT jwt, expires_at FROM hgi_token WHERE id = 1
-  `) as Array<{ jwt: string | null; expires_at: string | null }>;
+  `) as unknown as Array<{ jwt: string | null; expires_at: string | Date | null }>;
 
   const row = rows[0];
   if (!row || !row.jwt || !row.expires_at) return null;

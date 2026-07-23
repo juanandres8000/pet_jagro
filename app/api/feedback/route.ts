@@ -1,13 +1,8 @@
-import { neon } from '@neondatabase/serverless';
 import { NextResponse } from 'next/server';
+import { getSql as getDb } from '@/lib/pg';
 
-// Lazy connection - solo se conecta cuando se usa
-function getDb() {
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL is not configured');
-  }
-  return neon(process.env.DATABASE_URL);
-}
+// postgres.js abre conexiones TCP: esta ruta debe correr en Node, no en edge.
+export const runtime = 'nodejs';
 
 // Inicializar tabla si no existe
 async function initTable() {

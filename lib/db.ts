@@ -1,9 +1,8 @@
-import { neon } from '@neondatabase/serverless';
+import { getSql } from './pg';
 
-// Lazy connection - solo se conecta cuando se usa
+// Lazy connection - solo se conecta cuando se usa.
+// Delega en lib/pg.ts (postgres.js, cliente memoizado). Antes usaba
+// @neondatabase/serverless; Neon quedó abandonado en la migración a Supabase.
 export function getDb() {
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL is not configured');
-  }
-  return neon(process.env.DATABASE_URL);
+  return getSql();
 }
