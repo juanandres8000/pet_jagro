@@ -6,7 +6,7 @@ import { getSql as getDb } from '../pg';
  * datasets (catálogo, clientes, …) con el mismo patrón TTL + serve-stale.
  */
 
-export type Dataset = 'catalog' | 'clients' | 'pedidos' | 'cartera';
+export type Dataset = 'catalog' | 'clients' | 'pedidos' | 'cartera' | 'ventas' | 'recaudo';
 
 export interface Snapshot<T> {
   data: T[];

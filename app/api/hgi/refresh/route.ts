@@ -4,23 +4,29 @@ import { buildCatalogSnapshot } from '@/lib/hgi/catalog';
 import { buildClientsSnapshot } from '@/lib/hgi/clientes';
 import { buildPedidosSnapshot } from '@/lib/hgi/pedidos';
 import { buildCarteraSnapshot } from '@/lib/hgi/cartera';
+import { buildVentasSnapshot } from '@/lib/hgi/ventas';
+import { buildRecaudoSnapshot } from '@/lib/hgi/recaudo';
 import { writeSnapshot, type Dataset } from '@/lib/hgi/snapshotStore';
 import type { BuildResult } from '@/lib/hgi/readThrough';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-// Reconstruye contra HGINet (~12-22s por dataset; cartera hasta ~25s).
-export const maxDuration = 60;
+// Reconstruye contra HGINet. catalog/clients/pedidos ~12s, cartera ~25-40s,
+// y ventas/recaudo paginan varias ventanas: son los que fijan el techo.
+export const maxDuration = 300;
 
-// Builders por dataset. Para refrescar uno: ?dataset=catalog|clients|pedidos|cartera.
+// Builders por dataset. Para refrescar uno:
+// ?dataset=catalog|clients|pedidos|cartera|ventas|recaudo.
 const BUILDERS: Record<Dataset, () => Promise<BuildResult<unknown>>> = {
   catalog: buildCatalogSnapshot,
   clients: buildClientsSnapshot,
   pedidos: buildPedidosSnapshot,
   cartera: buildCarteraSnapshot,
+  ventas: buildVentasSnapshot,
+  recaudo: buildRecaudoSnapshot,
 };
 
-const ALL: Dataset[] = ['catalog', 'clients', 'pedidos', 'cartera'];
+const ALL: Dataset[] = ['catalog', 'clients', 'pedidos', 'cartera', 'ventas', 'recaudo'];
 
 /** Ejecuta el rebuild de los datasets pedidos (o todos) y guarda en Neon. */
 async function runRefresh(req: Request): Promise<NextResponse> {
@@ -51,7 +57,7 @@ const unauthorized = () => NextResponse.json({ ok: false, mensaje: 'No autorizad
  * GET — disparo desde Vercel Cron.
  * Los crons no pueden mandar headers propios ni POST: Vercel adjunta
  * `Authorization: Bearer $CRON_SECRET` automáticamente. Se valida contra CRON_SECRET.
- *   GET /api/hgi/refresh?dataset=catalog|clients|pedidos
+ *   GET /api/hgi/refresh?dataset=catalog|clients|pedidos|cartera|ventas|recaudo
  */
 export async function GET(req: Request) {
   const cronSecret = process.env.CRON_SECRET;
@@ -66,7 +72,7 @@ export async function GET(req: Request) {
 
 /**
  * POST — disparo MANUAL (curl/Postman) con header secreto.
- *   POST /api/hgi/refresh[?dataset=catalog|clients|pedidos]
+ *   POST /api/hgi/refresh[?dataset=catalog|clients|pedidos|cartera|ventas|recaudo]
  *   header: x-hgi-refresh-secret: <HGI_REFRESH_SECRET>
  */
 export async function POST(req: Request) {

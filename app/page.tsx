@@ -2,13 +2,14 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
+import GerenciaView from '@/components/GerenciaView';
 import PickingView from '@/components/PickingView';
 import InventarioView from '@/components/InventarioView';
 import CatalogoView from '@/components/CatalogoView';
 import ClientesView from '@/components/ClientesView';
 import CarteraView from '@/components/CarteraView';
 
-type Tab = 'picking' | 'inventario' | 'catalogo' | 'clientes' | 'cartera';
+type Tab = 'gerencia' | 'picking' | 'inventario' | 'catalogo' | 'clientes' | 'cartera';
 
 interface MenuItem {
   id: Tab;
@@ -25,6 +26,10 @@ interface MenuGroup {
 // Inventario y Catálogo sustituyen a la antigua Trazabilidad sobre la misma
 // fuente real (/api/productos).
 const MENU_GROUPS: MenuGroup[] = [
+  {
+    label: 'Dirección',
+    items: [{ id: 'gerencia', label: 'Gerencia' }],
+  },
   {
     label: 'Operación',
     items: [
@@ -44,7 +49,8 @@ const MENU_GROUPS: MenuGroup[] = [
 ];
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<Tab>('picking');
+  // Gerencia es la home: es la lectura que abre el dashboard.
+  const [activeTab, setActiveTab] = useState<Tab>('gerencia');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Búsqueda prefijada al saltar de Cartera → Clientes (link "Ver cliente").
   const [clientesSearch, setClientesSearch] = useState('');
@@ -152,6 +158,7 @@ export default function Home() {
 
         <div className="flex-1 px-4 py-8 sm:px-8 lg:px-12">
           <div className="mx-auto max-w-6xl">
+            {activeTab === 'gerencia' && <GerenciaView />}
             {activeTab === 'picking' && <PickingView />}
             {activeTab === 'inventario' && <InventarioView />}
             {activeTab === 'catalogo' && <CatalogoView />}

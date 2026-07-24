@@ -4,6 +4,8 @@
     { "path": "/api/hgi/refresh?dataset=catalog", "schedule": "0,15,30,45 * * * *" },
     { "path": "/api/hgi/refresh?dataset=clients", "schedule": "5,20,35,50 * * * *" },
     { "path": "/api/hgi/refresh?dataset=pedidos", "schedule": "10,25,40,55 * * * *" },
-    { "path": "/api/hgi/refresh?dataset=cartera", "schedule": "13,43 * * * *" }
+    { "path": "/api/hgi/refresh?dataset=cartera", "schedule": "13,43 * * * *" },
+    { "path": "/api/hgi/refresh?dataset=ventas", "schedule": "7 * * * *" },
+    { "path": "/api/hgi/refresh?dataset=recaudo", "schedule": "37 * * * *" }
   ]
 }
