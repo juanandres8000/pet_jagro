@@ -256,7 +256,8 @@ export interface HgiGetParams {
 /**
  * GET genérico a un recurso de HGINet.
  * Construye {BASE}/Api/{recurso}/{metodo}/ (case-sensitive) con query params,
- * adjunta el Bearer, detecta el objeto Error de HGINet y reintenta una vez ante 401.
+ * adjunta el Bearer, detecta el objeto Error de HGINet y reintenta una vez ante
+ * token caducado: 401, o 400 con cuerpo vacío (otra cara del mismo fallo).
  */
 export async function hgiGet<T = unknown>(
   recurso: string,
@@ -304,7 +305,29 @@ async function hgiGetInternal<T>(
     return hgiGetInternal<T>(recurso, metodo, params, true, timeoutMs);
   }
 
-  const data = (await res.json().catch(() => null)) as unknown;
+  // Se lee el cuerpo como texto (una sola vez) para distinguir dos clases de 400:
+  // el de token caducado y el de error real.
+  const rawBody = await res.text();
+
+  // HGINet responde 400 con CUERPO VACÍO cuando el token caducó server-side
+  // (síntoma distinto del 401, pero misma causa: el token dejó de valer). Se le
+  // da el mismo trato que al 401: invalidar caché, re-autenticar y reintentar UNA
+  // vez. Un 400 CON cuerpo (objeto de error de HGINet) es un fallo genuino y NO
+  // entra aquí: cae al manejo normal de más abajo.
+  if (res.status === 400 && rawBody.trim() === '' && !isRetry) {
+    await clearToken();
+    memoryToken = null;
+    return hgiGetInternal<T>(recurso, metodo, params, true, timeoutMs);
+  }
+
+  let data: unknown = null;
+  if (rawBody) {
+    try {
+      data = JSON.parse(rawBody);
+    } catch {
+      data = null;
+    }
+  }
 
   // Error lógico de HGINet (viene con HTTP 200 y objeto Error).
   // HGINet marca sus errores con $type "...Error.Error..." y/o un campo Error anidado.
