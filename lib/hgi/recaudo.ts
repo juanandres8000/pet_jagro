@@ -17,21 +17,22 @@ import type { BuildResult } from './readThrough';
  * Sólo mes corriente: el comparativo mensual vive en Ventas.
  *
  * Es el endpoint más lento del sistema: ~17 filas/segundo, y el mes son ~5.300
- * filas. En serie no cabe en el maxDuration de la ruta (300s), así que se
- * pagina en ventanas de 3 días y se lanzan TODAS en paralelo: medido, el mes
- * completo baja a ~90s de wall-clock con las 8 ventanas en vuelo a la vez.
+ * filas. En serie no cabe en el maxDuration de la ruta (300s).
  *
- * Su latencia depende del VOLUMEN de filas, no del ancho del rango: 3 días con
- * 129 filas tardan 11s y 3 días con 1.336 filas tardan 90s. Por eso el timeout
- * por ventana es holgado (200s) aunque la ventana sea corta.
+ * Su latencia depende del VOLUMEN de filas, no del ancho del rango, así que la
+ * ventana es de UN DÍA: trocear más fino reparte mejor la carga entre workers y
+ * evita que una ventana gorda marque el wall-clock. Medido sobre el mismo mes
+ * (5.334 filas): 8 ventanas de 3 días → 90s; 24 ventanas de 1 día con
+ * concurrencia 12 → 44s. El día más pesado del mes (641 filas) tardó 42s, y ese
+ * es el piso: nada baja de la ventana más lenta.
  */
 
-const RECAUDO_TIMEOUT_MS = 200_000;
-const DIAS_POR_VENTANA = 3;
+const RECAUDO_TIMEOUT_MS = 120_000;
+const DIAS_POR_VENTANA = 1;
 // HGINet NO limita por ritmo de llamadas: los 400 que parecían rate-limiting
-// resultaron ser token caducado (400 con cuerpo vacío). Verificado con 8
+// resultaron ser token caducado (400 con cuerpo vacío). Verificado con 12
 // ventanas simultáneas, todas 200.
-const CONCURRENCIA = 8;
+const CONCURRENCIA = 12;
 const REINTENTOS = 3;
 const BACKOFF_BASE_MS = 1500;
 
