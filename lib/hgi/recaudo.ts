@@ -14,24 +14,26 @@ import type { BuildResult } from './readThrough';
  * Método real verificado: Api/Cartera/ObtenerRecaudo con
  * codigo_tercero=*&fecha_inicial=&fecha_final=.
  *
- * Igual que Ventas: el rango completo del mes se pasa del timeout (23 días
- * >180s), así que se pagina. Ventanas de 5 días, concurrencia 2 y backoff ante
- * los 400 transitorios que HGINet devuelve cuando se le llama a mucho ritmo.
  * Sólo mes corriente: el comparativo mensual vive en Ventas.
+ *
+ * Es el endpoint más lento del sistema: ~17 filas/segundo, y el mes son ~5.300
+ * filas. En serie no cabe en el maxDuration de la ruta (300s), así que se
+ * pagina en ventanas de 3 días y se lanzan TODAS en paralelo: medido, el mes
+ * completo baja a ~90s de wall-clock con las 8 ventanas en vuelo a la vez.
+ *
+ * Su latencia depende del VOLUMEN de filas, no del ancho del rango: 3 días con
+ * 129 filas tardan 11s y 3 días con 1.336 filas tardan 90s. Por eso el timeout
+ * por ventana es holgado (200s) aunque la ventana sea corta.
  */
 
-/**
- * ObtenerRecaudo es MÁS lento que ObtenerDetalleReporte y su latencia no es
- * lineal con el rango: medido 1 día → 1,8s, 2 días → 2,2s, pero 3 días → 25,7s
- * y 5 días → 40,9s. Con dos ventanas en vuelo y HGINet bajo carga, 60s se
- * quedaban cortos y el build entero fallaba por timeout de una sola ventana.
- * 120s da margen suficiente sin acercarse al maxDuration de la ruta (300s).
- */
-const RECAUDO_TIMEOUT_MS = 120_000;
-const CONCURRENCIA = 2;
+const RECAUDO_TIMEOUT_MS = 200_000;
+const DIAS_POR_VENTANA = 3;
+// HGINet NO limita por ritmo de llamadas: los 400 que parecían rate-limiting
+// resultaron ser token caducado (400 con cuerpo vacío). Verificado con 8
+// ventanas simultáneas, todas 200.
+const CONCURRENCIA = 8;
 const REINTENTOS = 3;
 const BACKOFF_BASE_MS = 1500;
-const PAUSA_MS = 400;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -60,14 +62,12 @@ async function fetchVentana(r: Rango): Promise<RecaudoLinea[]> {
 }
 
 async function fetchRango(r: Rango): Promise<RecaudoLinea[]> {
-  const trozos = trocear(r);
+  const trozos = trocear(r, DIAS_POR_VENTANA);
   const out: RecaudoLinea[] = [];
   let i = 0;
   async function worker() {
     while (i < trozos.length) {
-      const v = trozos[i++];
-      out.push(...(await fetchVentana(v)));
-      await sleep(PAUSA_MS);
+      out.push(...(await fetchVentana(trozos[i++])));
     }
   }
   await Promise.all(Array.from({ length: Math.min(CONCURRENCIA, trozos.length) }, worker));
@@ -88,7 +88,7 @@ export async function buildRecaudoSnapshot(): Promise<BuildResult<RecaudoLinea>>
       ...resumen,
       fuente: 'Api/Cartera/ObtenerRecaudo',
       rango: actual,
-      ventanas: trocear(actual).length,
+      ventanas: trocear(actual, DIAS_POR_VENTANA).length,
       lineasCrudas: lineas.length,
       buildMs: Date.now() - t0,
     },

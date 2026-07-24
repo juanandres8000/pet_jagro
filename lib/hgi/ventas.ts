@@ -22,8 +22,9 @@ import type { BuildResult } from './readThrough';
  *    vacíos. Nunca usar 0 aquí: mezclaría pedidos con facturas.
  *  - El endpoint aguanta mal los rangos largos: 23 días tardan 40-120s y se
  *    pasan del timeout. Se pagina en ventanas de 5 días.
- *  - HGINet devuelve 400 transitorios cuando se le llama a mucho ritmo. De ahí
- *    el reintento con backoff y la concurrencia limitada a 2.
+ *  - El reintento con backoff cubre fallos transitorios de red/timeout. Ojo con
+ *    los HTTP 400 de cuerpo vacío: NO son rate-limiting sino token caducado, y
+ *    reintentar con el mismo token no los recupera (ver nota en el cliente).
  */
 
 const VENTAS_TIMEOUT_MS = 60_000;
@@ -31,7 +32,8 @@ const DIAS_POR_VENTANA = 5;
 const CONCURRENCIA = 2;
 const REINTENTOS = 3;
 const BACKOFF_BASE_MS = 1500;
-// Respiro entre llamadas para no disparar los 400 por ritmo.
+// Respiro entre llamadas. HGINet no limita por ritmo (ver nota arriba), pero
+// el mes completo se resuelve en ~18s igualmente y no vale la pena apretar.
 const PAUSA_MS = 400;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -108,7 +110,7 @@ async function fetchVentana(r: Rango): Promise<VentaLinea[]> {
       return mapVentas(raw);
     } catch (err) {
       ultimo = err as Error;
-      // Los 400 y los timeouts son transitorios (ritmo de llamadas): se reintenta.
+      // Timeouts y cortes de red son transitorios: se reintenta.
       // Un HgiError con código propio es un error lógico: no insistir.
       if (err instanceof HgiError) throw err;
     }
