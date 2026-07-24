@@ -20,7 +20,14 @@ import type { BuildResult } from './readThrough';
  * Sólo mes corriente: el comparativo mensual vive en Ventas.
  */
 
-const RECAUDO_TIMEOUT_MS = 60_000;
+/**
+ * ObtenerRecaudo es MÁS lento que ObtenerDetalleReporte y su latencia no es
+ * lineal con el rango: medido 1 día → 1,8s, 2 días → 2,2s, pero 3 días → 25,7s
+ * y 5 días → 40,9s. Con dos ventanas en vuelo y HGINet bajo carga, 60s se
+ * quedaban cortos y el build entero fallaba por timeout de una sola ventana.
+ * 120s da margen suficiente sin acercarse al maxDuration de la ruta (300s).
+ */
+const RECAUDO_TIMEOUT_MS = 120_000;
 const CONCURRENCIA = 2;
 const REINTENTOS = 3;
 const BACKOFF_BASE_MS = 1500;
