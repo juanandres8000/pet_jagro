@@ -183,6 +183,38 @@ export async function GET(req: Request) {
 
   const REFERENCIA_RESUMEN_POR_CLASES = 15404367512;
 
+  // ---- Reconciliación: ResumenPorClases por periodo vs Cartera/Obtener ----
+  // Si ResumenPorClases con periodo='*' también suma periodos, sus cifras por
+  // periodo deberían parecerse a las de Cartera/Obtener del mismo periodo.
+  const clasesPorPeriodo: Record<string, unknown> = {};
+  for (const per of ['*', '07', '08', '06', '13']) {
+    try {
+      const raw = await hgiGet<Fila[]>(
+        'Cartera',
+        'ResumenPorClases',
+        { anyo: '2026', periodo: per, codigo_tercero: '*', codigo_local: '*', tipo_cartera: '0', grupo: '*' },
+        { timeoutMs: TIMEOUT_MS },
+      );
+      const arr = Array.isArray(raw) ? raw : [];
+      let pos = 0;
+      let neg = 0;
+      for (const f of arr) {
+        const s = num(f.Saldo);
+        if (s >= 0) pos += s;
+        else neg += s;
+      }
+      clasesPorPeriodo[per] = {
+        filas: arr.length,
+        terceros: new Set(arr.map((f) => str(f.Tercero))).size,
+        positivo: round(pos),
+        negativo: round(neg),
+        neto: round(pos + neg),
+      };
+    } catch (err) {
+      clasesPorPeriodo[per] = { error: (err as Error).message };
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     porAnyo,
@@ -199,5 +231,6 @@ export async function GET(req: Request) {
       ratio: Number((consolidado / REFERENCIA_RESUMEN_POR_CLASES).toFixed(4)),
     },
     periodo8,
+    resumenPorClasesPorPeriodo: clasesPorPeriodo,
   });
 }
