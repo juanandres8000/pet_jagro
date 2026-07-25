@@ -7,11 +7,31 @@ import { formatPrice, kpiMoney } from '@/lib/format';
 import TercerosSaldoPanel from '@/components/TercerosSaldoPanel';
 
 /**
+ * MANDA Cartera/Obtener. Es la fuente del aging, del drill a documento y de todo
+ * lo que usa cobranza, así que el titular de la vista ("Total abierto") sale de
+ * ahí y es coherente con los buckets de abajo: sumarlos da el titular.
+ *
  * Los saldos A FAVOR del tercero (anticipos y notas crédito) sólo son visibles
- * vía Api/Cartera/ResumenPorClases, no vía Cartera/Obtener: ese último filtra
- * SaldoFinal > 0, así que los negativos nunca llegaban a esta vista y no había
- * dónde verlos. Se traen de /api/clases como fetch SECUNDARIO y best-effort: si
- * falla, Cartera se dibuja igual sin el KPI, nunca al revés.
+ * vía Api/Cartera/ResumenPorClases: Cartera/Obtener filtra SaldoFinal > 0, así
+ * que los negativos nunca llegaban a esta vista y no había dónde verlos.
+ *
+ * POR QUÉ LAS DOS FUENTES NO CUADRAN — y por qué no se mezclan en el titular.
+ * Difieren en ~$361 M (abierto $15.766 M contra positivo $15.404 M) porque
+ * agregan con criterios distintos:
+ *   - Cartera/Obtener   → filtra SaldoFinal > 0 y agrega POR DOCUMENTO.
+ *   - ResumenPorClases  → netea POR (tercero, clase, banco), así que un tercero
+ *                         con documentos en más y en menos se compensa antes de
+ *                         llegar al agregado.
+ * Hubo un KPI "Cartera neta" ($13.675 M) sacado de ResumenPorClases junto a los
+ * buckets: se eliminó. Dos criterios distintos en KPIs contiguos hacen que
+ * alguien sume el aging y no le dé el titular, y ese error de lectura es peor que
+ * no tener el neto a la vista.
+ *
+ * El KPI de saldos a favor se queda, pero SEPARADO del bloque de aging y con
+ * hint diciendo de dónde viene y que no se resta del total abierto.
+ *
+ * /api/clases entra como fetch SECUNDARIO y best-effort: si falla, Cartera se
+ * dibuja igual sin ese KPI. Nunca al revés.
  */
 interface ClasesKpis {
   totalSaldo: number;
@@ -120,47 +140,11 @@ export default function CarteraView({ onVerCliente }: CarteraViewProps) {
         <>
           {/* KPI cards */}
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {clases ? (
-              <KpiCard
-                label="Cartera neta"
-                {...kpiMoney(clases.totalSaldo)}
-                title={`Por cobrar ${formatPrice(clases.totalPositivo)} − a favor del tercero ${formatPrice(
-                  Math.abs(clases.totalNegativo),
-                )} = ${formatPrice(clases.totalSaldo)}`}
-                hint={`Por cobrar ${kpiMoney(clases.totalPositivo).value} − a favor ${
-                  kpiMoney(Math.abs(clases.totalNegativo)).value
-                }`}
-              />
-            ) : (
-              <KpiCard label="Total abierto" {...kpiMoney(resumen.totalAbierto)} />
-            )}
+            <KpiCard label="Total abierto" {...kpiMoney(resumen.totalAbierto)} />
             <KpiCard label="Total vencido" {...kpiMoney(resumen.totalVencido)} tone="danger" />
             <KpiCard label="% en 90+ días" value={`${(resumen.pct90 * 100).toFixed(1)}%`} tone="danger" />
-            {clases && clases.totalNegativo < 0 ? (
-              <button onClick={() => setVerAFavor((v) => !v)} className="text-left" aria-expanded={verAFavor}>
-                <KpiCard
-                  label="Saldos a favor"
-                  {...kpiMoney(clases.totalNegativo)}
-                  tone="danger"
-                  delta={verAFavor ? 'Ocultar detalle' : 'Ver los terceros →'}
-                  hint={`${clases.aFavorTerceros.toLocaleString('es-CO')} terceros con saldo a su favor`}
-                />
-              </button>
-            ) : (
-              <KpiCard label="Terceros con saldo" value={resumen.terceros.toLocaleString('es-CO')} tone="accent" />
-            )}
+            <KpiCard label="Terceros con saldo" value={resumen.terceros.toLocaleString('es-CO')} tone="accent" />
           </div>
-
-          {/* Drill de saldos a favor: filtrado y paginado server-side. */}
-          {verAFavor && clases && (
-            <TercerosSaldoPanel
-              titulo="Terceros con saldo a favor"
-              signo="negativo"
-              ordenInicial="saldoAsc"
-              onCerrar={() => setVerAFavor(false)}
-              pie="anticipos y notas crédito a favor del tercero"
-            />
-          )}
 
           {/* Aging chart */}
           <Card className="p-6">
@@ -190,6 +174,54 @@ export default function CarteraView({ onVerCliente }: CarteraViewProps) {
               })}
             </div>
           </Card>
+
+          {/*
+            Bloque SEPARADO del aging a propósito: sale de otra consulta del ERP
+            (ResumenPorClases) con otro criterio de agregación, así que no puede
+            leerse como parte del mismo total. El separador y el hint son la
+            señal de que se cambió de fuente.
+          */}
+          {clases && clases.totalNegativo < 0 && (
+            <section className="space-y-4 border-t border-line pt-8">
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+                <button
+                  onClick={() => setVerAFavor((v) => !v)}
+                  className="text-left"
+                  aria-expanded={verAFavor}
+                >
+                  <KpiCard
+                    label="Saldos a favor"
+                    {...kpiMoney(clases.totalNegativo)}
+                    tone="danger"
+                    delta={verAFavor ? 'Ocultar detalle' : 'Ver los terceros →'}
+                    hint={`${clases.aFavorTerceros.toLocaleString('es-CO')} terceros con saldo a su favor`}
+                  />
+                </button>
+                <div className="lg:col-span-2 flex items-center">
+                  <p className="text-xs leading-relaxed text-ink-muted">
+                    Anticipos y notas crédito a favor del tercero. Vienen de otra consulta del ERP
+                    (<span className="font-mono">Cartera/ResumenPorClases</span>), que netea por tercero, mientras el
+                    total abierto y el aging salen de <span className="font-mono">Cartera/Obtener</span>, que agrega por
+                    documento y sólo cuenta saldos positivos.
+                    <br />
+                    <span className="text-ink">No se restan del total abierto</span>: son dos lecturas distintas del
+                    ERP, no dos partes de la misma suma.
+                  </p>
+                </div>
+              </div>
+
+              {/* Drill: filtrado, ordenado y paginado server-side. */}
+              {verAFavor && (
+                <TercerosSaldoPanel
+                  titulo="Terceros con saldo a favor"
+                  signo="negativo"
+                  ordenInicial="saldoAsc"
+                  onCerrar={() => setVerAFavor(false)}
+                  pie="anticipos y notas crédito a favor del tercero"
+                />
+              )}
+            </section>
+          )}
 
           {/* Top deudores */}
           <Card>

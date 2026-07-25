@@ -10,6 +10,34 @@
  * "DESCUENTO EN VENTA" (ajuste). La clasificación es por patrón sobre la
  * descripción, y lo no reconocido cuenta como recaudo real (conservador para
  * el KPI de caja: preferimos revisar de más que ocultar un ingreso).
+ *
+ * ============ LA FUENTE ES ObtenerRecaudo. NO MIGRAR A PorVendedor ============
+ *
+ * `codigoVendedor`, `codigoLocal`, `cuota`, `fechaVencimiento`, `numeroPago` y
+ * `codigoClase` salen de **Api/Cartera/ObtenerRecaudo**, que ya los devolvía: la
+ * proyección vieja simplemente no los copiaba. Vienen 5.843/5.843 en 2026-07.
+ *
+ * Existe `Api/Cartera/ObtenerRecaudoPorVendedor` y parece el candidato natural
+ * "porque trae vendedor". NO SIRVE COMO FUENTE. Medido sobre el mismo mes
+ * (2026-07-01..24), mismo troceo por día:
+ *
+ *              ObtenerRecaudo   ObtenerRecaudoPorVendedor
+ *   filas             5.843              2.324
+ *   claves op.        3.594              2.324
+ *   importe   $1.145.120.305     $1.145.120.305
+ *
+ * Mismo dinero en 60% menos filas: **colapsa el desglose por concepto**. Aquí una
+ * aplicación de pago con descuento son DOS filas ("PAGO FACTURA CLIENTE" $269.330
+ * y "DESCUENTO EN VENTA" $13.466); allí es una. Y 1.270 claves de operación
+ * existen en ObtenerRecaudo y no en el otro.
+ *
+ * Peor: PorVendedor devuelve las tres descripciones en NULL
+ * (`DescripcionConcepto` 0/2.324 contra 5.843/5.843 aquí). Como `esRecaudo` se
+ * deriva de `DescripcionConcepto`, migrar dejaría todo clasificado como recaudo,
+ * `totalAjustes` en 0 y el KPI de caja inflado — una regresión silenciosa sobre
+ * una cifra financiera. Los campos que se buscaban ya estaban aquí; lo único que
+ * aportaba el otro endpoint era el eje `tipo_pago` (CxP), hoy casi vacío.
+ * ============================================================================
  */
 
 export interface HgiRecaudoDoc {
@@ -53,6 +81,25 @@ export interface RecaudoLinea {
   concepto: string;
   /** false = ajuste (descuento/nota/retención), no plata que entró. */
   esRecaudo: boolean;
+
+  // ---- Campos que el endpoint ya traía y la proyección descartaba ----
+  // Verificado sobre 2026-07: los seis vienen poblados 5.843/5.843 en
+  // ObtenerRecaudo. Ver la nota de fuente en la cabecera de este archivo.
+  /** Código del vendedor, además del nombre que ya se proyectaba. */
+  codigoVendedor: string;
+  /** Local/sucursal. Su descripción (`DescripcionLocal`) queda en `local`. */
+  codigoLocal: string;
+  /** Cuota del documento sobre la que se aplicó el pago. */
+  cuota: string;
+  /** Vencimiento de la cuota; con `fechaPago` da la mora real, no sólo `edad`. */
+  fechaVencimiento: string;
+  /** Número del recibo de pago. Junto a documento+cuota identifica la aplicación. */
+  numeroPago: string;
+  /** Clase de cartera del documento. Su descripción queda en `clase`. */
+  codigoClase: string;
+  /** Descripciones que HGINet sí devuelve en este endpoint (y no en el otro). */
+  clase: string;
+  local: string;
 }
 
 export interface RecaudoPorClave {
@@ -115,6 +162,19 @@ export function mapRecaudo(raw: unknown): RecaudoLinea[] {
       edad: num(d.Edad),
       concepto,
       esRecaudo: !esAjuste(concepto),
+
+      // Ensanchado ADITIVO: sólo se agregan campos a la fila proyectada. Ningún
+      // agregado de aggregateRecaudo los lee, así que las cifras (totalRecaudo,
+      // totalAjustes, operaciones, terceros, pctAlDia, porDia, porVendedor,
+      // porConcepto, topClientes) no se mueven ni un peso.
+      codigoVendedor: str(d.CodigoVendedor),
+      codigoLocal: str(d.CodigoLocal),
+      cuota: str(d.Cuota),
+      fechaVencimiento: str(d.FechaVencimiento).slice(0, 10),
+      numeroPago: str(d.NumeroPago),
+      codigoClase: str(d.CodigoClase),
+      clase: str(d.DescripcionClase),
+      local: str(d.DescripcionLocal),
     });
   }
   return out;
