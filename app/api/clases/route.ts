@@ -34,7 +34,14 @@ type ResumenGuardado = ClasesResumen & { fuente?: string; anyoConsultado?: numbe
 export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
   const clase = sp.get('clase');
-  const orden = sp.get('orden') === 'nombre' ? 'nombre' : 'saldo';
+  // `signo` permite pedir sólo los saldos a favor del tercero (negativos) sin
+  // bajar las 1.271 filas al browser para filtrarlas ahí. Es lo que consume el
+  // KPI "Saldos a favor" de Cartera.
+  const signoParam = sp.get('signo');
+  const signo = signoParam === 'negativo' || signoParam === 'positivo' ? signoParam : null;
+  const ordenParam = sp.get('orden');
+  const orden =
+    ordenParam === 'nombre' ? 'nombre' : ordenParam === 'saldoAsc' ? 'saldoAsc' : 'saldo';
   const page = Math.max(1, Number(sp.get('page')) || 1);
   const pageSize = Math.min(PAGE_SIZE_MAX, Math.max(5, Number(sp.get('pageSize')) || PAGE_SIZE_DEFAULT));
 
@@ -64,22 +71,34 @@ export async function GET(req: Request) {
       ...(rt.rebuildError ? { rebuildError: rt.rebuildError } : {}),
     };
 
-    // ---- Drill: terceros de una clase ----
-    if (clase !== null) {
-      const deLaClase = filas.filter((f) => f.codigoClase === clase);
-      const ordenadas = [...deLaClase].sort((a, b) =>
-        orden === 'nombre' ? a.nombreTercero.localeCompare(b.nombreTercero, 'es') : b.saldo - a.saldo,
+    // ---- Drill: filas por clase y/o por signo del saldo ----
+    // Filtrar y paginar aquí, no en la vista: el dataset son 1.271 filas y el
+    // browser no tiene por qué verlas para mostrar 25.
+    if (clase !== null || signo !== null) {
+      const sel = filas.filter(
+        (f) =>
+          (clase === null || f.codigoClase === clase) &&
+          (signo === null || (signo === 'negativo' ? f.saldo < 0 : f.saldo >= 0)),
       );
+      const ordenadas = [...sel].sort((a, b) => {
+        if (orden === 'nombre') return a.nombreTercero.localeCompare(b.nombreTercero, 'es');
+        // saldoAsc pone el saldo MÁS negativo primero, que es el orden útil
+        // cuando se listan saldos a favor.
+        return orden === 'saldoAsc' ? a.saldo - b.saldo : b.saldo - a.saldo;
+      });
       const total = ordenadas.length;
       const maxPage = Math.max(1, Math.ceil(total / pageSize));
       const pageSafe = Math.min(page, maxPage);
-      const grupo = resumen.porClase.find((c) => c.codigo === clase) ?? null;
+      const grupo = clase !== null ? resumen.porClase.find((c) => c.codigo === clase) ?? null : null;
+      const saldoSeleccion = sel.reduce((a, f) => a + f.saldo, 0);
 
       return NextResponse.json({
         ...meta,
         clase,
-        nombreClase: grupo?.nombre ?? deLaClase[0]?.nombreClase ?? clase,
+        signo,
+        nombreClase: grupo?.nombre ?? sel[0]?.nombreClase ?? clase,
         grupo,
+        saldoSeleccion,
         terceros: {
           page: pageSafe,
           pageSize,

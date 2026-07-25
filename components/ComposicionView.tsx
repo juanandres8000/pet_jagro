@@ -12,6 +12,11 @@ import { formatPrice, kpiMoney } from '@/lib/format';
  * lambda. El drill a terceros de una clase es otra llamada paginada, no un
  * filtrado en el browser sobre el dataset completo.
  *
+ * VISTA SIN ENTRADA DE NAV. Su premisa —composición por clase— no existe hoy:
+ * el ERP clasifica toda la cartera en una sola clase. Se conserva montada y
+ * compilando para el día en que empiece a clasificar; la evidencia numérica de
+ * por qué está oculta vive en mappers/clases.ts.
+ *
  * DOS REGLAS QUE SE VEN EN ESTA VISTA:
  * - Los saldos negativos (anticipos y notas a favor del tercero) se MUESTRAN.
  *   Por eso el gráfico es de barras divergentes con línea base en cero, y no uno
@@ -240,31 +245,7 @@ export default function ComposicionView() {
       <section className="space-y-3">
         <SectionTitle>Composición por clase de documento</SectionTitle>
         <Card className="overflow-hidden">
-          {clases.length === 1 ? (
-            // El ERP de esta instancia sólo usa la clase 0 (GENERAL). Un gráfico
-            // de una barra al 100% no es una composición: es el total con otro
-            // nombre. Se dice explícitamente en vez de fingir un desglose, por la
-            // misma razón por la que no hay selector de tipo de cartera.
-            // El componente de barras se conserva: si el ERP empieza a clasificar,
-            // esto se convierte en el gráfico sin tocar nada.
-            <div className="p-6">
-              <p className="text-sm text-ink">
-                El ERP clasifica toda la cartera en una sola clase:{' '}
-                <span className="font-medium">{clases[0].nombre}</span>. No hay composición por clase que graficar
-                mientras eso no cambie.
-              </p>
-              <p className="mt-2 text-xs text-ink-muted">
-                Lo que sí discrimina el dato es el signo del saldo: {miles(clases[0].terceros)} terceros, de los cuales{' '}
-                <span className="text-danger">{miles(clases[0].enNegativo)}</span> tienen saldo a favor por{' '}
-                <span className="tabular text-danger" title={formatPrice(clases[0].saldoNegativo)}>
-                  {kpiMoney(clases[0].saldoNegativo).value}
-                </span>
-                . Están al final de la tabla de terceros.
-              </p>
-            </div>
-          ) : (
-            <BarrasDivergentes grupos={clases} onClick={(c) => abrirDrill(c)} seleccion={drill?.clase ?? null} />
-          )}
+          <BarrasDivergentes grupos={clases} onClick={(c) => abrirDrill(c)} seleccion={drill?.clase ?? null} />
         </Card>
       </section>
 

@@ -14,6 +14,19 @@ import type { BuildResult } from './readThrough';
  *
  * `tipo_cartera` se fija en 0 (General): es el único con datos en esta instancia
  * (1 Cuotas y 3 Tipo devuelven 0 filas), y por eso la vista no expone selector.
+ *
+ * POR QUÉ LA VISTA "COMPOSICIÓN" NO TIENE ENTRADA DE NAV
+ * Medido en vivo sobre 2026: el ERP devuelve UNA SOLA clase para toda la cartera
+ * —código 0, "GENERAL"— con 1.271 registros, 1.270 terceros y $13.675.461.337
+ * netos. Un desglose de una sola categoría no es un desglose, así que la entrada
+ * de menú prometía algo que el dato no tiene. Ídem el banco: `NombreBanco` llega
+ * poblado pero con un único valor ("GENERAL"), de ahí `bancoDiscrimina`.
+ *
+ * Lo que el dato SÍ discrimina es el SIGNO: 135 terceros con saldo a favor por
+ * −$1.728.906.175, el 11% del saldo por cobrar. Eso no era visible en ningún
+ * módulo porque Cartera/Obtener filtra SaldoFinal > 0. Por eso ese hallazgo se
+ * movió al KPI "Saldos a favor" de la vista de Cartera, y esta vista quedó
+ * montada pero sin nav, lista para el día en que el ERP empiece a clasificar.
  */
 
 // El año completo son ~32s medidos; margen amplio sobre eso.

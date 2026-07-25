@@ -4,6 +4,21 @@ import { useState, useEffect } from 'react';
 import type { CarteraResumen, BucketKey } from '@/lib/hgi/mappers/cartera';
 import { PageHeader, KpiCard, Card, Badge, Th, Tone } from '@/components/ui';
 import { formatPrice, kpiMoney } from '@/lib/format';
+import TercerosSaldoPanel from '@/components/TercerosSaldoPanel';
+
+/**
+ * Los saldos A FAVOR del tercero (anticipos y notas crédito) sólo son visibles
+ * vía Api/Cartera/ResumenPorClases, no vía Cartera/Obtener: ese último filtra
+ * SaldoFinal > 0, así que los negativos nunca llegaban a esta vista y no había
+ * dónde verlos. Se traen de /api/clases como fetch SECUNDARIO y best-effort: si
+ * falla, Cartera se dibuja igual sin el KPI, nunca al revés.
+ */
+interface ClasesKpis {
+  totalSaldo: number;
+  totalPositivo: number;
+  totalNegativo: number;
+  aFavorTerceros: number;
+}
 
 interface CarteraViewProps {
   /** Navega a la vista de Clientes con el tercero prefiltrado. */
@@ -26,6 +41,8 @@ export default function CarteraView({ onVerCliente }: CarteraViewProps) {
   const [aviso, setAviso] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
   const [builtAt, setBuiltAt] = useState<string | null>(null);
+  const [clases, setClases] = useState<ClasesKpis | null>(null);
+  const [verAFavor, setVerAFavor] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,6 +65,25 @@ export default function CarteraView({ onVerCliente }: CarteraViewProps) {
         if (!cancelled) setLoading(false);
       }
     })();
+
+    // Fetch SECUNDARIO y aislado: .catch(() => null) sobre el fetch, no sólo
+    // sobre el .json(). Un fallo aquí deja Cartera intacta sin el KPI de saldos
+    // a favor; jamás tumba la vista.
+    (async () => {
+      const res = await fetch('/api/clases').catch(() => null);
+      if (!res) return;
+      const j = (await res.json().catch(() => null)) as
+        | { totalSaldo?: number; totalPositivo?: number; totalNegativo?: number; porClase?: Array<{ enNegativo: number }> }
+        | null;
+      if (cancelled || !j || typeof j.totalSaldo !== 'number') return;
+      setClases({
+        totalSaldo: j.totalSaldo,
+        totalPositivo: j.totalPositivo ?? 0,
+        totalNegativo: j.totalNegativo ?? 0,
+        aFavorTerceros: (j.porClase ?? []).reduce((a, c) => a + (c.enNegativo ?? 0), 0),
+      });
+    })();
+
     return () => {
       cancelled = true;
     };
@@ -84,11 +120,47 @@ export default function CarteraView({ onVerCliente }: CarteraViewProps) {
         <>
           {/* KPI cards */}
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            <KpiCard label="Total abierto" {...kpiMoney(resumen.totalAbierto)} />
+            {clases ? (
+              <KpiCard
+                label="Cartera neta"
+                {...kpiMoney(clases.totalSaldo)}
+                title={`Por cobrar ${formatPrice(clases.totalPositivo)} − a favor del tercero ${formatPrice(
+                  Math.abs(clases.totalNegativo),
+                )} = ${formatPrice(clases.totalSaldo)}`}
+                hint={`Por cobrar ${kpiMoney(clases.totalPositivo).value} − a favor ${
+                  kpiMoney(Math.abs(clases.totalNegativo)).value
+                }`}
+              />
+            ) : (
+              <KpiCard label="Total abierto" {...kpiMoney(resumen.totalAbierto)} />
+            )}
             <KpiCard label="Total vencido" {...kpiMoney(resumen.totalVencido)} tone="danger" />
             <KpiCard label="% en 90+ días" value={`${(resumen.pct90 * 100).toFixed(1)}%`} tone="danger" />
-            <KpiCard label="Terceros con saldo" value={resumen.terceros.toLocaleString('es-CO')} tone="accent" />
+            {clases && clases.totalNegativo < 0 ? (
+              <button onClick={() => setVerAFavor((v) => !v)} className="text-left" aria-expanded={verAFavor}>
+                <KpiCard
+                  label="Saldos a favor"
+                  {...kpiMoney(clases.totalNegativo)}
+                  tone="danger"
+                  delta={verAFavor ? 'Ocultar detalle' : 'Ver los terceros →'}
+                  hint={`${clases.aFavorTerceros.toLocaleString('es-CO')} terceros con saldo a su favor`}
+                />
+              </button>
+            ) : (
+              <KpiCard label="Terceros con saldo" value={resumen.terceros.toLocaleString('es-CO')} tone="accent" />
+            )}
           </div>
+
+          {/* Drill de saldos a favor: filtrado y paginado server-side. */}
+          {verAFavor && clases && (
+            <TercerosSaldoPanel
+              titulo="Terceros con saldo a favor"
+              signo="negativo"
+              ordenInicial="saldoAsc"
+              onCerrar={() => setVerAFavor(false)}
+              pie="anticipos y notas crédito a favor del tercero"
+            />
+          )}
 
           {/* Aging chart */}
           <Card className="p-6">

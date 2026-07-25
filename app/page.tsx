@@ -52,7 +52,15 @@ const MENU_GROUPS: MenuGroup[] = [
     label: 'Finanzas',
     items: [
       { id: 'cartera', label: 'Cartera' },
-      { id: 'composicion', label: 'Composición' },
+      // COMPOSICIÓN OCULTA — mismo patrón que Operación: se quita la entrada de
+      // nav, la rama de render y el componente siguen montados abajo.
+      // Su premisa no existe en esta instancia: el ERP clasifica TODA la cartera
+      // en una sola clase (0, GENERAL), así que un menú "Composición" prometía un
+      // desglose inexistente. El hallazgo que sí valía —los saldos a favor— vive
+      // ahora en Cartera, que es donde se busca.
+      // Si el ERP empieza a clasificar, descomentar esta línea devuelve la vista
+      // completa (gráfico de barras divergentes incluido) sin reconstruir nada.
+      // { id: 'composicion', label: 'Composición' },
     ],
   },
 ];
