@@ -15,9 +15,30 @@ export interface StoredToken {
 
 // Crea la tabla si no existe (init-on-use, igual que chat_feedback).
 // Idempotente: equivale a migrations/001_hgi_token.sql.
-let tableReady = false;
-async function ensureTokenTable(): Promise<void> {
-  if (tableReady) return;
+//
+/**
+ * Se memoiza la PROMESA en vuelo, no un booleano — ver CLAUDE.md
+ * § "Trampas del pooler".
+ *
+ * Con un flag, dos llamadas concurrentes ven `false` las dos y emiten dos
+ * CREATE TABLE; cada uno pide ACCESS EXCLUSIVE y, sobre la única conexión del
+ * cliente (max: 1), se bloquean entre sí hasta el timeout. Aquí es especialmente
+ * fácil de disparar: getValidToken corre desde cada builder, y el refresh de
+ * todos los datasets los invoca en secuencia. Está latente sólo porque hgi_token
+ * ya existe.
+ */
+let tablePromise: Promise<void> | null = null;
+function ensureTokenTable(): Promise<void> {
+  if (!tablePromise) {
+    tablePromise = crearTabla().catch((err) => {
+      tablePromise = null; // permite reintentar si falló
+      throw err;
+    });
+  }
+  return tablePromise;
+}
+
+async function crearTabla(): Promise<void> {
   const sql = getDb();
   await sql`
     CREATE TABLE IF NOT EXISTS hgi_token (
@@ -29,7 +50,6 @@ async function ensureTokenTable(): Promise<void> {
     )
   `;
   await sql`INSERT INTO hgi_token (id, jwt, expires_at) VALUES (1, NULL, NULL) ON CONFLICT (id) DO NOTHING`;
-  tableReady = true;
 }
 
 /** Lee el token cacheado. Devuelve null si no hay token guardado. */

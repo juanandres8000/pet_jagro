@@ -14,9 +14,29 @@ export interface Snapshot<T> {
   sourceCounts: Record<string, unknown> | null;
 }
 
-let tableReady = false;
-async function ensureSnapshotTable(): Promise<void> {
-  if (tableReady) return;
+/**
+ * Se memoiza la PROMESA en vuelo, no un booleano — ver la nota extensa en
+ * lib/hgi/ventasMensualStore.ts y CLAUDE.md § "Trampas del pooler".
+ *
+ * Con un flag, dos llamadas concurrentes ven `false` las dos y emiten dos
+ * CREATE TABLE; cada uno pide ACCESS EXCLUSIVE y, sobre la única conexión del
+ * cliente (max: 1), se bloquean entre sí hasta el timeout. Aquí está latente
+ * porque hgi_snapshot ya existe y el IF NOT EXISTS sale barato por NOTICE, pero
+ * revienta en cualquier entorno nuevo (Preview con otra BD, restore, Postgres
+ * local).
+ */
+let tablePromise: Promise<void> | null = null;
+function ensureSnapshotTable(): Promise<void> {
+  if (!tablePromise) {
+    tablePromise = crearTabla().catch((err) => {
+      tablePromise = null; // permite reintentar si falló
+      throw err;
+    });
+  }
+  return tablePromise;
+}
+
+async function crearTabla(): Promise<void> {
   const sql = getDb();
   await sql`
     CREATE TABLE IF NOT EXISTS hgi_snapshot (
@@ -26,7 +46,6 @@ async function ensureSnapshotTable(): Promise<void> {
       source_counts JSONB
     )
   `;
-  tableReady = true;
 }
 
 /** Lee el snapshot de un dataset. Devuelve null si no hay datos guardados. */

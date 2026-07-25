@@ -21,10 +21,16 @@ Sistema de gestión de picking y distribución para productos veterinarios. Demo
 - `app/globals.css` → Tema azul pastel
 
 ## Módulos
-Nav agrupado en 3 secciones (`MENU_GROUPS` en `app/page.tsx`):
-- **OPERACIÓN**: Picking, Inventario, Catálogo
+Nav agrupado (`MENU_GROUPS` en `app/page.tsx`):
+- **DIRECCIÓN**: Gerencia ← home del dashboard (tab por defecto)
 - **COMERCIAL**: Clientes
 - **FINANZAS**: Cartera
+
+**OPERACIÓN (Picking, Inventario, Catálogo) está oculta**, no retirada: el grupo
+va comentado en `MENU_GROUPS`, pero las ramas de render y los componentes siguen
+montados y compilando. Descomentar ese bloque los devuelve al menú sin tocar nada
+más. Es un patrón distinto al de los módulos retirados (ver más abajo), que sí
+perdieron su rama de render.
 
 El **Chat AI** existe pero está **oculto** — ver "Chat AI" más abajo.
 
@@ -146,6 +152,58 @@ Cualquier ruta que toque la BD debe declarar `export const runtime = 'nodejs'`
 **Trampa al comentar queries**: un `//` dentro de un `` sql`...` `` viaja como
 texto a Postgres y da `syntax error`. `tsc` y `next build` no lo detectan (es
 texto dentro de un string). Los comentarios van **arriba** del template.
+
+### Trampas del pooler
+
+Las dos son consecuencia directa de `max: 1` + pooler en *transaction mode*. Las
+dos se manifiestan como **la ruta colgada hasta el timeout**, sin error ni log:
+en `pg_stat_activity` el backend aparece `state=active` con
+`wait_event=Client/ClientRead` — la query ya corrió y Postgres espera al cliente.
+
+**1. `ensureTable` memoiza la PROMESA, no un booleano.**
+```ts
+let tablePromise: Promise<void> | null = null;
+function ensureTable(): Promise<void> {
+  if (!tablePromise) {
+    tablePromise = crearTabla().catch((err) => {
+      tablePromise = null; // permite reintentar si falló
+      throw err;
+    });
+  }
+  return tablePromise;
+}
+```
+Con un `let tableReady = false`, dos llamadas concurrentes ven `false` las dos y
+emiten **dos** `CREATE TABLE IF NOT EXISTS`. Cada uno pide un lock
+`ACCESS EXCLUSIVE` y, sobre la única conexión, el segundo espera al primero
+mientras el primero espera turno en el pipeline. Deadlock.
+
+Sólo se dispara cuando la tabla **no existe todavía**: con la tabla creada el
+`IF NOT EXISTS` sale barato por NOTICE. Por eso vivió latente en
+`snapshotStore` y `tokenStore` — y por eso reventó al estrenar
+`hgi_ventas_mensual`. Aplicado ya en los tres stores; cualquier store nuevo debe
+copiar el patrón.
+
+**2. No paralelizar lecturas a la BD dentro de una ruta.**
+`Promise.all([readA(), readB(), readC()])` sobre el cliente `max: 1` cuelga la
+ruta. Van **en serie**:
+```ts
+const meses = await readAnio(anio);
+const mesesAnt = await readAnio(anioAnterior);
+const cartera = await carteraResumen();
+```
+Son queries rápidas sobre índice; encadenarlas no cuesta nada medible.
+`readThrough`, `/api/clientes` y `/api/gerencia` ya consultan así. El
+`Promise.all` sí es válido para llamadas **a HGINet** (ver `buildClientsSnapshot`)
+— la restricción es de la conexión a Postgres, no de la red.
+
+**3. El DDL va por session mode (5432), no por el pooler (6543).**
+Crear una tabla nueva a través del pooler en transaction mode se cuelga. Aplicá
+la migración por `5432` (misma URL, otro puerto) y dejá el `ensureTable` como
+red de seguridad idempotente:
+```
+node -e "... postgres(process.env.DATABASE_URL.replace(':6543/', ':5432/')) ... sql.unsafe(ddl)"
+```
 
 ### Tablas
 `hgi_token` (001), `hgi_catalog_snapshot` (002, huérfana desde la 003),
