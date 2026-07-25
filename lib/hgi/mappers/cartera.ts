@@ -73,6 +73,16 @@ export interface VendedorCartera {
 export interface DocProximo {
   documento: string;
   transaccion: string;
+  /**
+   * Cuota del documento. OJO: en CARTERA sí discrimina, al contrario que en
+   * recaudo (donde viene "1" en las 5.843 filas y por eso no se proyecta).
+   * Cartera/Obtener devuelve UNA FILA POR DOCUMENTO/CUOTA, así que sin este
+   * campo tres cuotas del mismo documento se veían como una fila triplicada:
+   * medido, 707 claves (transaccion-documento-tercero) con filas idénticas campo
+   * a campo. Los importes siempre fueron correctos —cada cuota es un saldo
+   * propio y los agregados ya las contaban por separado— pero la tabla mentía.
+   */
+  cuota: string;
   codigoTercero: string;
   codigoVendedor: string;
   fechaVencimiento: string; // YYYY-MM-DD
@@ -223,6 +233,7 @@ export function aggregateCartera(
         proximos.push({
           documento: str(d.Documento),
           transaccion: str(d.Transaccion),
+          cuota: str(d.Cuota),
           codigoTercero: id,
           codigoVendedor: vend,
           fechaVencimiento: fv,
@@ -278,7 +289,13 @@ export function aggregateCartera(
           terceros: v.terceros.size,
         }))
         .sort((a, b) => b.saldoAbierto - a.saldoAbierto),
-      proximos: proximos.sort((a, b) => a.diasParaVencer - b.diasParaVencer || b.saldo - a.saldo),
+      proximos: proximos.sort(
+        (a, b) =>
+          a.diasParaVencer - b.diasParaVencer ||
+          b.saldo - a.saldo ||
+          a.documento.localeCompare(b.documento) ||
+          a.cuota.localeCompare(b.cuota),
+      ),
       horizonteProximosDias: HORIZONTE_PROXIMOS_DIAS,
     },
   };

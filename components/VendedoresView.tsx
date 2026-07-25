@@ -54,6 +54,7 @@ interface Ventana {
 interface DocFila {
   documento: string;
   transaccion: string;
+  cuota: string;
   codigoTercero: string;
   nombreTercero: string;
   codigoVendedor: string;
@@ -472,10 +473,16 @@ export default function VendedoresView() {
                   </thead>
                   <tbody className="divide-y divide-line">
                     {detalle.filas.map((f) => (
-                      <tr key={`${f.transaccion}-${f.documento}-${f.codigoTercero}`} className="hover:bg-surface-hover">
+                      <tr
+                        key={`${f.transaccion}-${f.documento}-${f.cuota}-${f.codigoTercero}`}
+                        className="hover:bg-surface-hover"
+                      >
                         <td className="px-4 py-2.5">
                           <div className="tabular font-mono text-xs text-ink">{f.documento}</div>
-                          <div className="tabular mt-0.5 text-[11px] text-ink-faint">transacción {f.transaccion}</div>
+                          <div className="tabular mt-0.5 text-[11px] text-ink-faint">
+                            transacción {f.transaccion}
+                            {f.cuota ? ` · cuota ${f.cuota}` : ''}
+                          </div>
                         </td>
                         <td className="px-4 py-2.5">
                           <div className="max-w-[20rem] truncate text-ink" title={f.nombreTercero}>
