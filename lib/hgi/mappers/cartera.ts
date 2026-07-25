@@ -74,13 +74,19 @@ export interface DocProximo {
   documento: string;
   transaccion: string;
   /**
-   * Cuota del documento. OJO: en CARTERA sí discrimina, al contrario que en
-   * recaudo (donde viene "1" en las 5.843 filas y por eso no se proyecta).
-   * Cartera/Obtener devuelve UNA FILA POR DOCUMENTO/CUOTA, así que sin este
-   * campo tres cuotas del mismo documento se veían como una fila triplicada:
-   * medido, 707 claves (transaccion-documento-tercero) con filas idénticas campo
-   * a campo. Los importes siempre fueron correctos —cada cuota es un saldo
-   * propio y los agregados ya las contaban por separado— pero la tabla mentía.
+   * Cuota del documento. MEDIDO: viene VACÍA en cartera (0 de 2.474 filas
+   * pobladas), así que NO discrimina — la hipótesis de que las filas repetidas
+   * eran cuotas distintas quedó descartada. Se proyecta igualmente para dejar
+   * constancia de que el campo llega vacío y que nadie vuelva a intentarlo.
+   *
+   * PENDIENTE, VER EL REPORTE: `Cartera/Obtener` devuelve filas que son
+   * idénticas en todos los campos proyectados — 720 claves
+   * (transaccion-documento-tercero) repetidas, 707 de ellas idénticas también en
+   * vendedor, fechaVencimiento y saldo. Falta mirar el payload CRUDO para saber
+   * si difieren en algún campo no proyectado (el candidato más probable es
+   * `Periodo`, porque la consulta va con periodo='*' y el mismo documento podría
+   * venir una vez por periodo contable) o si son duplicados de la fuente.
+   * Hasta saberlo NO se puede afirmar que totalAbierto esté bien ni que esté mal.
    */
   cuota: string;
   codigoTercero: string;
