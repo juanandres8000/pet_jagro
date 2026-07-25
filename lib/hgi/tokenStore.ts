@@ -60,9 +60,32 @@ export async function writeToken(jwt: string, expiresAt: Date): Promise<void> {
   `;
 }
 
-/** Invalida el token cacheado (p.ej. tras un 401 server-side). */
-export async function clearToken(): Promise<void> {
+/**
+ * Invalida el token cacheado (p.ej. tras un 401 server-side), pero SOLO si la
+ * fila sigue conteniendo el JWT que falló: **compare-and-swap**.
+ *
+ * El `WHERE jwt = ${failedJwt}` NO es cosmético. HGINet permite un solo token
+ * vigente por usuario y esta fila es compartida por todos los lambdas. El UPDATE
+ * incondicional anterior permitía esta secuencia:
+ *   1. Lambda A renueva → escribe T2. HGINet invalida T1.
+ *   2. Lambda B, en vuelo con T1, recibe 401 y borraba T2 — un token VÁLIDO.
+ *   3. B re-autentica → HGINet responde "El Token aún se encuentra vigente"
+ *      (T2 sigue vivo) y rehúsa emitir otro.
+ *   4. El store quedaba vacío y nadie podía autenticar hasta que T2 expirara:
+ *      hasta 20 min en que todo rebuild contra HGINet fallaba.
+ * Con el CAS, un lambda sólo puede invalidar el token que él mismo usó.
+ *
+ * @returns `true` si invalidó; `false` si otro lambda ya rotó el token (la fila
+ * ya tiene uno más nuevo, así que no hay nada que invalidar).
+ */
+export async function clearToken(failedJwt: string): Promise<boolean> {
   await ensureTokenTable();
   const sql = getDb();
-  await sql`UPDATE hgi_token SET jwt = NULL, expires_at = NULL, updated_at = NOW() WHERE id = 1`;
+  const rows = (await sql`
+    UPDATE hgi_token
+       SET jwt = NULL, expires_at = NULL, updated_at = NOW()
+     WHERE id = 1 AND jwt = ${failedJwt}
+    RETURNING id
+  `) as unknown as Array<{ id: number }>;
+  return rows.length > 0;
 }

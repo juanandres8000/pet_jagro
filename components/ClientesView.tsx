@@ -42,7 +42,17 @@ export default function ClientesView({ initialSearch = '' }: ClientesViewProps) 
     (async () => {
       try {
         // Clientes (fuente) + cartera (best-effort para el saldo) en paralelo.
-        const [res, carRes] = await Promise.all([fetch('/api/clientes'), fetch('/api/cartera')]);
+        //
+        // El .catch() va sobre el FETCH de cartera, no sólo sobre su .json(): un
+        // fetch que RECHAZA (504 que cierra la conexión, red caída) hacía
+        // rechazar el Promise.all entero y Clientes mostraba "No se pudieron
+        // cargar" aunque su propia data hubiera llegado perfecta. Cartera es
+        // decorativa aquí — sólo aporta el badge de saldo vencido — así que
+        // nunca debe poder tumbar la vista.
+        const [res, carRes] = await Promise.all([
+          fetch('/api/clientes'),
+          fetch('/api/cartera').catch(() => null),
+        ]);
         const data = await res.json();
         if (cancelled) return;
         if (!res.ok || !data.ok) {
@@ -54,7 +64,7 @@ export default function ClientesView({ initialSearch = '' }: ClientesViewProps) 
           setStale(!!data.stale);
         }
         try {
-          const car = await carRes.json();
+          const car = carRes ? await carRes.json() : null;
           if (!cancelled && car?.ok && Array.isArray(car.clientes)) {
             setCarteraById(new Map((car.clientes as CarteraCliente[]).map((c) => [c.codigoTercero, c])));
           }

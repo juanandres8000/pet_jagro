@@ -122,6 +122,24 @@ function maskAuthUrl(url: string): string {
     .replace(/(clave=)[^&]*/i, '$1***');
 }
 
+/**
+ * Loguea el error que reportó HGINet y devuelve la excepción tipada para tirarla.
+ * El log es imprescindible: el mensaje acaba en el body de un 502 y Vercel no
+ * loguea response bodies, así que era la información que faltaba para diagnosticar.
+ */
+function logAndBuildHgiError(
+  payload: HgiErrorPayload,
+  httpStatus: number,
+  recurso: string,
+  metodo: string,
+): HgiError {
+  console.error(
+    `[hgi] ${recurso}/${metodo} → error de HGINet (HTTP ${httpStatus}) ` +
+      `codigo=${payload.Codigo ?? '?'} fecha=${payload.Fecha ?? '?'}: ${payload.Mensaje ?? '(sin mensaje)'}`,
+  );
+  return new HgiError(payload, httpStatus);
+}
+
 function isHgiErrorPayload(x: unknown): x is HgiErrorPayload {
   return (
     !!x &&
@@ -201,6 +219,27 @@ async function authenticate(): Promise<StoredToken | null> {
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * Invalida el token que ESTE lambda acabó de usar, vía compare-and-swap.
+ *
+ * Siempre limpia la caché L1 (nuestro JWT dejó de valer, sea quien sea el dueño
+ * de la fila), pero la fila compartida sólo se toca si sigue conteniendo ese
+ * mismo JWT — ver clearToken(). Cuando el CAS no afecta filas significa que otro
+ * lambda ya rotó el token: el reintento leerá el nuevo desde el store y saldrá
+ * adelante. Ese caso se loguea explícitamente porque es el bug que veníamos
+ * persiguiendo: borrar el token ajeno dejaba el store vacío con HGINet aún
+ * reteniendo el vigente, y nadie podía autenticar hasta que expirara.
+ */
+async function invalidateUsedToken(usedJwt: string, motivo: string): Promise<void> {
+  memoryToken = null;
+  const invalidado = await clearToken(usedJwt);
+  if (invalidado) {
+    console.warn(`[hgi] ${motivo}: token invalidado (CAS ok), se re-autentica y reintenta`);
+  } else {
+    console.warn(`[hgi] ${motivo}: token ya rotado por otro lambda, no se invalida`);
+  }
+}
 
 /**
  * Devuelve un JWT válido, renovándolo si hace falta.
@@ -300,8 +339,7 @@ async function hgiGetInternal<T>(
 
   // Token expiró server-side: invalidar caché, re-autenticar y reintentar UNA vez.
   if (res.status === 401 && !isRetry) {
-    await clearToken();
-    memoryToken = null;
+    await invalidateUsedToken(token, `401 en ${recurso}/${metodo}`);
     return hgiGetInternal<T>(recurso, metodo, params, true, timeoutMs);
   }
 
@@ -315,8 +353,7 @@ async function hgiGetInternal<T>(
   // vez. Un 400 CON cuerpo (objeto de error de HGINet) es un fallo genuino y NO
   // entra aquí: cae al manejo normal de más abajo.
   if (res.status === 400 && rawBody.trim() === '' && !isRetry) {
-    await clearToken();
-    memoryToken = null;
+    await invalidateUsedToken(token, `400 de cuerpo vacío en ${recurso}/${metodo}`);
     return hgiGetInternal<T>(recurso, metodo, params, true, timeoutMs);
   }
 
@@ -331,17 +368,25 @@ async function hgiGetInternal<T>(
 
   // Error lógico de HGINet (viene con HTTP 200 y objeto Error).
   // HGINet marca sus errores con $type "...Error.Error..." y/o un campo Error anidado.
+  //
+  // El mensaje se loguea ANTES de tirar: la excepción termina serializada en el
+  // body del 502 de /api/hgi/refresh, y Vercel no loguea bodies de respuesta —
+  // así que sin esta línea la razón real del fallo era invisible en los logs.
   if (data && typeof data === 'object' && !Array.isArray(data)) {
     const obj = data as { Error?: unknown; $type?: unknown };
     if (isHgiErrorPayload(obj.Error)) {
-      throw new HgiError(obj.Error, res.status);
+      throw logAndBuildHgiError(obj.Error, res.status, recurso, metodo);
     }
     if (typeof obj.$type === 'string' && /\.Error\.Error/.test(obj.$type) && isHgiErrorPayload(obj)) {
-      throw new HgiError(obj as HgiErrorPayload, res.status);
+      throw logAndBuildHgiError(obj as HgiErrorPayload, res.status, recurso, metodo);
     }
   }
 
   if (!res.ok) {
+    // Cuerpo acotado: basta para identificar el fallo sin volcar payloads enteros.
+    console.error(
+      `[hgi] ${recurso}/${metodo} devolvió HTTP ${res.status}. Cuerpo: ${rawBody.slice(0, 500) || '(vacío)'}`,
+    );
     throw new Error(`HGINet ${recurso}/${metodo} devolvió HTTP ${res.status}`);
   }
 

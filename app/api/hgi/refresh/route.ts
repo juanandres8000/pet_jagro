@@ -44,6 +44,9 @@ async function runRefresh(req: Request): Promise<NextResponse> {
     } catch (err) {
       anyError = true;
       const mensaje = err instanceof HgiError ? `HgiError ${err.codigo}: ${err.message}` : (err as Error).message;
+      // El mensaje viaja en el body del 502 y Vercel NO loguea response bodies:
+      // sin este console.error la causa del fallo del cron era invisible.
+      console.error(`[refresh] dataset "${dataset}" falló: ${mensaje}`);
       results[dataset] = { ok: false, mensaje };
     }
   }

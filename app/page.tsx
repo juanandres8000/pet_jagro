@@ -30,14 +30,19 @@ const MENU_GROUPS: MenuGroup[] = [
     label: 'Dirección',
     items: [{ id: 'gerencia', label: 'Gerencia' }],
   },
-  {
-    label: 'Operación',
-    items: [
-      { id: 'picking', label: 'Picking' },
-      { id: 'inventario', label: 'Inventario' },
-      { id: 'catalogo', label: 'Catálogo' },
-    ],
-  },
+  // OPERACIÓN OCULTA — ver CLAUDE.md § "Operación oculta".
+  // A diferencia de Facturación/Liquidaciones/Trazabilidad, aquí sólo se quita
+  // la entrada de nav: las ramas de render de picking/inventario/catalogo y sus
+  // componentes siguen montados abajo y compilan. Descomentar este bloque
+  // devuelve los tres módulos al menú sin tocar nada más.
+  // {
+  //   label: 'Operación',
+  //   items: [
+  //     { id: 'picking', label: 'Picking' },
+  //     { id: 'inventario', label: 'Inventario' },
+  //     { id: 'catalogo', label: 'Catálogo' },
+  //   ],
+  // },
   {
     label: 'Comercial',
     items: [{ id: 'clientes', label: 'Clientes' }],
