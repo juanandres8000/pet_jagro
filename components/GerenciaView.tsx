@@ -45,6 +45,7 @@ interface Kpis {
   margenPct: number;
   documentos: number;
   lineas: number;
+  pedidos: number;
   ticketPromedio: number;
   clientesActivos: number;
 }
@@ -278,6 +279,11 @@ function BloqueKpis({
           hint={k ? `${formatPrice(k.margen)} sobre ${formatPrice(k.costo)} de costo` : undefined}
         />
         <KpiCard label="Documentos" value={k ? miles(k.documentos) : '—'} hint={k ? `${miles(k.lineas)} líneas` : undefined} />
+        <KpiCard
+          label="Pedidos"
+          value={k ? miles(k.pedidos) : '—'}
+          hint="Pedidos distintos detrás de esos documentos; la venta de mostrador no lleva pedido"
+        />
         <KpiCard label="Ticket promedio" {...kpiMoney(k?.ticketPromedio ?? 0)} hint="Venta ÷ documentos" />
         <KpiCard
           label="Clientes activos"

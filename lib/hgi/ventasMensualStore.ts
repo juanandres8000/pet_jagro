@@ -21,6 +21,7 @@ export interface MesAgregado {
   lineas: number;
   documentos: number;
   clientesNits: string[];
+  pedidosNums: string[];
   topClientes: VentaPorClave[];
   topProductos: VentaPorClave[];
   porLinea: VentaPorClave[];
@@ -69,6 +70,7 @@ async function crearTabla(): Promise<void> {
       lineas        INTEGER NOT NULL DEFAULT 0,
       documentos    INTEGER NOT NULL DEFAULT 0,
       clientes_nits JSONB,
+      pedidos_nums  JSONB,
       top_clientes  JSONB,
       top_productos JSONB,
       por_linea     JSONB,
@@ -90,6 +92,7 @@ interface Fila {
   lineas: number;
   documentos: number;
   clientes_nits: unknown;
+  pedidos_nums: unknown;
   top_clientes: unknown;
   top_productos: unknown;
   por_linea: unknown;
@@ -111,6 +114,7 @@ const toMes = (f: Fila): MesAgregado => ({
   lineas: Number(f.lineas),
   documentos: Number(f.documentos),
   clientesNits: arr<string>(f.clientes_nits),
+  pedidosNums: arr<string>(f.pedidos_nums),
   topClientes: arr<VentaPorClave>(f.top_clientes),
   topProductos: arr<VentaPorClave>(f.top_productos),
   porLinea: arr<VentaPorClave>(f.por_linea),
@@ -129,12 +133,13 @@ export async function writeMes(m: Omit<MesAgregado, 'builtAt'>): Promise<Date> {
   const rows = (await sql`
     INSERT INTO hgi_ventas_mensual
       (mes, venta, costo, margen, iva, descuento, lineas, documentos,
-       clientes_nits, top_clientes, top_productos, por_linea, por_vendedor,
+       clientes_nits, pedidos_nums, top_clientes, top_productos, por_linea, por_vendedor,
        hasta, parcial, built_at)
     VALUES
       (${m.mes}, ${m.venta}, ${m.costo}, ${m.margen}, ${m.iva}, ${m.descuento},
        ${m.lineas}, ${m.documentos},
-       ${sql.json(m.clientesNits as never)}, ${sql.json(m.topClientes as never)},
+       ${sql.json(m.clientesNits as never)}, ${sql.json(m.pedidosNums as never)},
+       ${sql.json(m.topClientes as never)},
        ${sql.json(m.topProductos as never)}, ${sql.json(m.porLinea as never)},
        ${sql.json(m.porVendedor as never)},
        ${m.hasta}, ${m.parcial}, NOW())
@@ -147,6 +152,7 @@ export async function writeMes(m: Omit<MesAgregado, 'builtAt'>): Promise<Date> {
           lineas = EXCLUDED.lineas,
           documentos = EXCLUDED.documentos,
           clientes_nits = EXCLUDED.clientes_nits,
+          pedidos_nums = EXCLUDED.pedidos_nums,
           top_clientes = EXCLUDED.top_clientes,
           top_productos = EXCLUDED.top_productos,
           por_linea = EXCLUDED.por_linea,

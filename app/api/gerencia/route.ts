@@ -36,6 +36,8 @@ interface Kpis {
   margenPct: number;
   documentos: number;
   lineas: number;
+  /** Pedidos distintos, excluido el placeholder "0" (venta sin pedido previo). */
+  pedidos: number;
   ticketPromedio: number;
   clientesActivos: number;
 }
@@ -107,13 +109,16 @@ function kpisDeMeses(meses: MesAgregado[]): Kpis {
   let documentos = 0;
   let lineas = 0;
   const nits = new Set<string>();
+  const pedidos = new Set<string>();
   for (const m of meses) {
     venta += m.venta;
     costo += m.costo;
     documentos += m.documentos;
     lineas += m.lineas;
-    // Unión, no suma: el cliente que compra todos los meses cuenta UNA vez.
+    // Unión, no suma: el cliente que compra todos los meses cuenta UNA vez, y un
+    // pedido facturado en dos meses (entrega parcial) tampoco se duplica.
     for (const n of m.clientesNits) nits.add(n);
+    for (const p of m.pedidosNums) pedidos.add(p);
   }
   const margen = venta - costo;
   return {
@@ -123,6 +128,7 @@ function kpisDeMeses(meses: MesAgregado[]): Kpis {
     margenPct: pct(margen, venta),
     documentos,
     lineas,
+    pedidos: pedidos.size,
     ticketPromedio: div(venta, documentos),
     clientesActivos: nits.size,
   };
@@ -351,6 +357,8 @@ async function vistaMes(mes: string, f: Filtros, page: number, pageSize: number)
 
   const t = totales(filtradas);
   const nits = new Set(filtradas.map((l) => l.nitTercero).filter(Boolean));
+  // "0" es el placeholder de HGINet para venta sin pedido previo (mostrador).
+  const pedidos = new Set(filtradas.map((l) => l.numeroPedido).filter((n) => n && n !== '0'));
   const kpis: Kpis = {
     venta: t.venta,
     costo: t.costo,
@@ -358,6 +366,7 @@ async function vistaMes(mes: string, f: Filtros, page: number, pageSize: number)
     margenPct: t.margenPct,
     documentos: t.documentos,
     lineas: t.lineas,
+    pedidos: pedidos.size,
     ticketPromedio: div(t.venta, t.documentos),
     clientesActivos: nits.size,
   };

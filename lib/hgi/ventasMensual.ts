@@ -92,7 +92,12 @@ export function elegirMes(
 export function agregarMes(mes: string, lineas: VentaLinea[], rango: Rango, parcial: boolean): Omit<MesAgregado, 'builtAt'> {
   const t = totales(lineas);
   const nits = new Set<string>();
-  for (const l of lineas) if (l.nitTercero) nits.add(l.nitTercero);
+  const pedidos = new Set<string>();
+  for (const l of lineas) {
+    if (l.nitTercero) nits.add(l.nitTercero);
+    // "0" es el placeholder de HGINet para venta sin pedido previo (mostrador).
+    if (l.numeroPedido && l.numeroPedido !== '0') pedidos.add(l.numeroPedido);
+  }
 
   return {
     mes,
@@ -104,6 +109,7 @@ export function agregarMes(mes: string, lineas: VentaLinea[], rango: Rango, parc
     lineas: t.lineas,
     documentos: t.documentos,
     clientesNits: [...nits],
+    pedidosNums: [...pedidos],
     // Se guardan 50, no 10: el top-10 ANUAL se calcula uniendo los rankings
     // mensuales, y con sólo 10 por mes un cliente constante en el puesto 11 se
     // perdería del año entero. Con 50 el ranking anual es exacto salvo casos

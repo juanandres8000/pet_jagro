@@ -22,6 +22,11 @@ CREATE TABLE IF NOT EXISTS hgi_ventas_mensual (
   -- calcular "clientes activos del año" como UNIÓN de los meses: sumar los
   -- conteos mensuales cuenta varias veces al cliente que compra todos los meses.
   clientes_nits JSONB,
+  -- Números de pedido distintos del mes, excluido el placeholder "0" (venta sin
+  -- pedido previo, típico de mostrador). Lista y no conteo porque un pedido puede
+  -- facturarse en dos meses (entregas parciales) y sumar conteos lo contaría dos
+  -- veces en el total del año.
+  pedidos_nums  JSONB,
   top_clientes  JSONB,
   top_productos JSONB,
   por_linea     JSONB,
