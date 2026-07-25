@@ -7,7 +7,10 @@ import type { CarteraCliente, CarteraResumen } from '@/lib/hgi/mappers/cartera';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 // El rebuild de Cartera contra HGINet es lento (~22s) + join + escritura.
-export const maxDuration = 60;
+// El mismo valor alimenta el presupuesto de tiempo de readThrough,
+// así que no pueden desincronizarse.
+const MAX_DURATION_SEC = 60;
+export const maxDuration = MAX_DURATION_SEC;
 
 /**
  * Cartera (aging) con caché read-through en Neon (dataset 'cartera').
@@ -22,6 +25,7 @@ export async function GET() {
       'cartera',
       ttlMsFromEnv('HGI_CARTERA_TTL_MIN', 30),
       buildCarteraSnapshot,
+      { maxDurationSec: MAX_DURATION_SEC },
     );
 
     const resumen = (rt.snapshot.sourceCounts ?? {}) as unknown as CarteraResumen;

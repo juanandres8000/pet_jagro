@@ -9,7 +9,10 @@ export const dynamic = 'force-dynamic';
 // El rebuild pagina ~11 ventanas de 5 días contra HGINet con concurrencia 2.
 // Es el dataset más lento del sistema; en la práctica lo puebla el cron y esta
 // ruta sirve del snapshot.
-export const maxDuration = 300;
+// El mismo valor alimenta el presupuesto de tiempo de readThrough,
+// así que no pueden desincronizarse.
+const MAX_DURATION_SEC = 300;
+export const maxDuration = MAX_DURATION_SEC;
 
 /**
  * Ventas y rentabilidad con caché read-through (dataset 'ventas').
@@ -28,6 +31,7 @@ export async function GET(req: Request) {
       'ventas',
       ttlMsFromEnv('HGI_VENTAS_TTL_MIN', 60),
       buildVentasSnapshot,
+      { maxDurationSec: MAX_DURATION_SEC },
     );
 
     const resumen = (rt.snapshot.sourceCounts ?? {}) as unknown as VentasResumen;

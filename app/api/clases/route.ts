@@ -8,7 +8,10 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 // El build es UNA llamada a ResumenPorClases: ~32s medidos para el año completo.
 // 60 da margen para un lambda lento sin acercarse al techo.
-export const maxDuration = 60;
+// El mismo valor alimenta el presupuesto de tiempo de readThrough,
+// así que no pueden desincronizarse.
+const MAX_DURATION_SEC = 60;
+export const maxDuration = MAX_DURATION_SEC;
 
 /**
  * Composición de cartera por clase de documento, con caché read-through
@@ -50,6 +53,7 @@ export async function GET(req: Request) {
       'clases',
       ttlMsFromEnv('HGI_CLASES_TTL_MIN', 60),
       buildClasesSnapshot,
+      { maxDurationSec: MAX_DURATION_SEC },
     );
 
     const filas = rt.snapshot.data;

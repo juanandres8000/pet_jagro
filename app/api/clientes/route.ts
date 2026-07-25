@@ -7,7 +7,10 @@ import type { Cliente } from '@/lib/hgi/mappers/terceros';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 // Un rebuild de Terceros contra HGINet tarda varios segundos.
-export const maxDuration = 30;
+// El mismo valor alimenta el presupuesto de tiempo de readThrough,
+// así que no pueden desincronizarse.
+const MAX_DURATION_SEC = 60;
+export const maxDuration = MAX_DURATION_SEC;
 
 /**
  * Clientes (Terceros de HGINet) con caché read-through en Neon (dataset 'clients').
@@ -21,6 +24,7 @@ export async function GET() {
       'clients',
       ttlMsFromEnv('HGI_CLIENTS_TTL_MIN', 15),
       buildClientsSnapshot,
+      { maxDurationSec: MAX_DURATION_SEC },
     );
 
     const clientes = rt.snapshot.data;

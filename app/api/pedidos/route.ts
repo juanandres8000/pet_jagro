@@ -7,7 +7,10 @@ import type { Pedido } from '@/lib/hgi/mappers/pedidos';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 // Un rebuild contra HGINet tarda varios segundos.
-export const maxDuration = 30;
+// El mismo valor alimenta el presupuesto de tiempo de readThrough,
+// así que no pueden desincronizarse.
+const MAX_DURATION_SEC = 60;
+export const maxDuration = MAX_DURATION_SEC;
 
 /**
  * Pedidos pendientes (core de picking) con caché read-through en Neon ('pedidos').
@@ -20,6 +23,7 @@ export async function GET() {
       'pedidos',
       ttlMsFromEnv('HGI_PEDIDOS_TTL_MIN', 15),
       buildPedidosSnapshot,
+      { maxDurationSec: MAX_DURATION_SEC },
     );
 
     const pedidos = rt.snapshot.data;

@@ -7,7 +7,10 @@ import type { RecaudoLinea, RecaudoResumen } from '@/lib/hgi/mappers/recaudo';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 // Pagina el mes corriente en ventanas de 5 días contra HGINet.
-export const maxDuration = 300;
+// El mismo valor alimenta el presupuesto de tiempo de readThrough,
+// así que no pueden desincronizarse.
+const MAX_DURATION_SEC = 300;
+export const maxDuration = MAX_DURATION_SEC;
 
 /**
  * Recaudo del mes con caché read-through (dataset 'recaudo').
@@ -23,6 +26,7 @@ export async function GET(req: Request) {
       'recaudo',
       ttlMsFromEnv('HGI_RECAUDO_TTL_MIN', 60),
       buildRecaudoSnapshot,
+      { maxDurationSec: MAX_DURATION_SEC },
     );
 
     const resumen = (rt.snapshot.sourceCounts ?? {}) as unknown as RecaudoResumen;

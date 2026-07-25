@@ -7,7 +7,10 @@ import type { ProductoDTO } from '@/lib/hgi/mappers/productos';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 // Un rebuild contra HGINet tarda ~12-22s; el default de 10s no alcanza.
-export const maxDuration = 30;
+// El mismo valor alimenta el presupuesto de tiempo de readThrough,
+// así que no pueden desincronizarse.
+const MAX_DURATION_SEC = 60;
+export const maxDuration = MAX_DURATION_SEC;
 
 interface CatalogInventario {
   disponible?: boolean;
@@ -25,6 +28,7 @@ export async function GET() {
       'catalog',
       ttlMsFromEnv('HGI_CATALOG_TTL_MIN', 15),
       buildCatalogSnapshot,
+      { maxDurationSec: MAX_DURATION_SEC },
     );
 
     const products = rt.snapshot.data;
