@@ -153,6 +153,53 @@ Cualquier ruta que toque la BD debe declarar `export const runtime = 'nodejs'`
 texto a Postgres y da `syntax error`. `tsc` y `next build` no lo detectan (es
 texto dentro de un string). Los comentarios van **arriba** del template.
 
+### Cartera: `SaldoFinal` es saldo de CIERRE por periodo — nunca sumar periodos
+
+**`periodo='*'` en `Cartera/Obtener` y en `Cartera/ResumenPorClases` devuelve una
+fila por documento Y POR MES.** `SaldoFinal` (y el `Saldo` de ResumenPorClases) es
+el saldo al cierre de ese mes. Sumar las filas multiplica la deuda por los meses
+que el documento estuvo abierto: **medido, ~6x**.
+
+La evidencia — factura 196509, tercero 900323135, 2026. Tres filas idénticas
+salvo tres campos:
+
+| Periodo | SaldoInicial | ValorGeneradoPeriodo | SaldoFinal |
+|---|---|---|---|
+| 6 | 0 | **1.793.018** | 1.793.018 |
+| 7 | 1.793.018 | 0 | 1.793.018 |
+| 8 | 1.793.018 | 0 | 1.793.018 |
+
+El `ValorGenerado` sólo aparece en el 6: la factura se emitió ese mes y en los dos
+siguientes se arrastra sin pagar. **Es UNA deuda, no tres.**
+
+Lo que costó: el titular de Cartera decía **15.766.172.168** cuando el real era
+**2.577.420.853**. Y no salvaba comparar con la otra fuente, porque
+`ResumenPorClases` con `periodo='*'` estaba inflado igual (15.404.367.512 = la
+suma de sus periodos). Las dos cifras "cuadraban" entre sí porque estaban mal de
+la misma forma. El DSO lo delataba: 439 días en vez de ~72.
+
+**La regla**: el saldo vigente es el `SaldoFinal` del **último periodo con cierre
+real**, detectado dinámicamente en `lib/hgi/periodoVigente.ts`
+(último periodo con `ValorGeneradoPeriodo != 0`). Nunca la suma de periodos y
+nunca la suma de años — sumar 2023-2026 daba 28.528.773.031, porque el "abierto al
+cierre de 2023" incluye deuda pagada en 2024.
+
+Tres cosas que hay que saber para no re-romperlo:
+
+- **Cada periodo YA incluye los documentos viejos.** El `minFecha` de los 8
+  periodos de 2026 es `2020-01-01`. Un periodo solo es la cartera abierta
+  completa; no falta nada por traer de años anteriores.
+- **El periodo puede ser puro arrastre.** El ERP pre-genera la apertura del mes
+  siguiente: el periodo 8 de 2026 traía 3.903 filas y 2.122 M con **0** filas con
+  `ValorGeneradoPeriodo != 0`, **0** con `ValorPagadoPeriodo != 0` y **0** con
+  `SaldoInicial = 0`. Por eso la detección exige actividad, no sólo que el periodo
+  exista.
+- **El periodo 13 es el cierre anual**, no un mes: en 2025 viene idéntico al 12.
+  Queda fuera porque la búsqueda arranca en el mes en curso.
+
+Si alguien necesita la serie mensual, hay que pedir **cada periodo por separado y
+jamás sumarlos**. Es el bug que se reintroduce buscando exactamente eso.
+
 ### Regla dura: nunca probar escrituras contra un dataset real
 
 **Cualquier prueba que escriba en `hgi_snapshot` va contra un dataset desechable

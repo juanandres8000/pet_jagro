@@ -4,15 +4,23 @@
  * ================== DOS REGLAS QUE NO SE PUEDEN TOCAR ==================
  *
  * 1. `Saldo` es un SALDO, NO UN FLUJO. **Nunca se suma entre periodos.**
- *    Por eso el builder llama UNA vez con `periodo=*` y deja que el ERP
- *    consolide: la cifra que devuelve ya es el saldo del año.
- *    Medido en vivo: periodo=06 → 772 filas; periodo=05 → 762; periodo=* → 1.271.
- *    Si fuera aditivo, el año daría ~9.240 filas (12 × 770). No lo es: son
- *    combinaciones distintas de (clase, tercero, banco), y el mismo tercero
- *    aparece en varios periodos con su saldo, no con su movimiento.
- *    Iterar los 12 periodos y sumar multiplicaría la cartera por ~12.
- *    Es EXACTAMENTE el bug que alguien reintroduce en seis meses "para tener
- *    la serie mensual". Si hace falta serie temporal, no es este endpoint.
+ *    El builder llama con el PERIODO VIGENTE, uno solo.
+ *
+ *    CORRECCIÓN de lo que decía esta nota antes: afirmaba que con `periodo='*'`
+ *    el ERP consolidaba y que la cifra ya era el saldo del año. **Era falso**, y
+ *    el razonamiento estaba mal: de que 12 periodos no dieran 12×770 filas se
+ *    concluyó "está consolidado", cuando la explicación real es que no todos los
+ *    terceros tienen saldo todos los meses.
+ *
+ *    Medido con periodo concreto: periodo 6 → 1.877.143.159 · periodo 7 →
+ *    2.538.016.294 · periodo 8 → 2.084.383.797. Y `periodo='*'` daba
+ *    15.404.367.512, que es la SUMA de los periodos. La cartera venía inflada ~6x
+ *    y nadie lo notó porque Cartera/Obtener estaba inflado en la misma proporción,
+ *    así que las dos cifras "cuadraban" entre sí.
+ *
+ *    Es EXACTAMENTE el bug que alguien reintroduce en seis meses "para tener la
+ *    serie mensual". Si hace falta serie temporal hay que pedir cada periodo por
+ *    separado y NUNCA sumarlos. Ver lib/hgi/periodoVigente.ts.
  *
  * 2. Los saldos NEGATIVOS son reales y se muestran. No se filtran, no se
  *    vuelven cero, no se pasan por Math.abs. Son anticipos y notas crédito a

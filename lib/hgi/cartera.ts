@@ -1,38 +1,24 @@
 import { hgiGet, HgiError, getValidToken } from './client';
-import { aggregateCartera, type HgiCarteraDoc, type CarteraCliente } from './mappers/cartera';
+import { aggregateCartera, type CarteraCliente } from './mappers/cartera';
+import { detectarPeriodoVigente } from './periodoVigente';
 import { readSnapshot } from './snapshotStore';
 import type { Cliente, HgiTercero } from './mappers/terceros';
 import type { BuildResult } from './readThrough';
 
 /**
  * Construcción del dataset de Cartera (aging) contra HGINet.
- * Método real verificado: Api/Cartera/Obtener con anyo=<año>&periodo=*&resto=*.
- * NUNCA anyo=* (global): devuelve objeto/timeout (~60s). Con anyo fijo del año
- * en curso, HGINet retorna TODA la cartera abierta al corte (docs originales de
- * años anteriores vienen con Edad alta) — validado en ~32k documentos.
+ * Método real verificado: Api/Cartera/Obtener con anyo=<año>&periodo=<vigente>.
+ * NUNCA anyo=* (global): devuelve objeto/timeout (~60s).
  *
- * La llamada es lenta (~22s) → timeout ampliado. Una sola llamada; si el año en
- * curso viene vacío (p.ej. inicio de año sin periodos), se cae al año anterior.
+ * ¡Y NUNCA periodo='*'!  Ese era el bug: devuelve una fila por documento Y POR
+ * MES, con el saldo de cierre de cada mes, así que sumarlas multiplica la deuda
+ * por los meses que el documento estuvo abierto (~6x medido). El periodo vigente
+ * se detecta dinámicamente — ver lib/hgi/periodoVigente.ts, que lleva la
+ * evidencia completa y los casos borde.
+ *
+ * Cada periodo YA incluye los documentos viejos (minFecha 2020-01-01 en todos los
+ * de 2026), así que un solo periodo es la cartera abierta completa al corte.
  */
-
-const CARTERA_TIMEOUT_MS = 60_000;
-
-const paramsAnyo = (anyo: number) => ({
-  anyo: String(anyo),
-  periodo: '*',
-  codigo_tercero: '*',
-  codigo_local: '*',
-  tipo_cartera: '*',
-  grupo: '*',
-  codigo_clase: '*',
-});
-
-async function fetchCartera(anyo: number): Promise<HgiCarteraDoc[]> {
-  const raw = await hgiGet<HgiCarteraDoc[]>('Cartera', 'Obtener', paramsAnyo(anyo), {
-    timeoutMs: CARTERA_TIMEOUT_MS,
-  });
-  return Array.isArray(raw) ? raw : [];
-}
 
 /** Lee el snapshot de clients de Neon y arma el lookup CodigoTercero → nombre. */
 async function nombresLookup(): Promise<Map<string, string>> {
@@ -81,14 +67,10 @@ async function resolverNombresFaltantes(codigos: string[]): Promise<Map<string, 
 export async function buildCarteraSnapshot(): Promise<BuildResult<CarteraCliente>> {
   await getValidToken(); // prime del token cacheado
 
-  const anyoActual = new Date().getFullYear();
-  let anyoUsado = anyoActual;
-  let raw = await fetchCartera(anyoActual);
-  if (raw.length === 0) {
-    // Año en curso sin datos → cartera abierta del año anterior.
-    anyoUsado = anyoActual - 1;
-    raw = await fetchCartera(anyoUsado);
-  }
+  // Detecta el periodo vigente y trae sus filas en la misma pasada. El fallback
+  // de año (enero sin actividad → último cierre del año anterior) vive ahí.
+  const { pv, filas: raw } = await detectarPeriodoVigente();
+  const anyoUsado = pv.anyo;
 
   const nombres = await nombresLookup();
   const { clientes, resumen } = aggregateCartera(raw, nombres);
@@ -111,6 +93,13 @@ export async function buildCarteraSnapshot(): Promise<BuildResult<CarteraCliente
       ...resumen, // el resumen de aging viaja en sourceCounts (lo sirve el endpoint)
       fuente: 'Api/Cartera/Obtener',
       anyoConsultado: anyoUsado,
+      // Periodo con el que se construyó ESTA cifra, para poder auditarla.
+      periodoVigente: pv.periodo,
+      periodoDeteccion: {
+        anyo: pv.anyo,
+        periodo: pv.periodo,
+        descartados: pv.descartados,
+      },
       docsCrudos: raw.length,
     },
   };

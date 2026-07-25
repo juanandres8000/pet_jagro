@@ -1,6 +1,29 @@
 /**
  * Mapper/agregador de Cartera (HGINet Api/Cartera/Obtener) → aging.
  *
+ * ================== SaldoFinal ES SALDO DE CIERRE POR PERIODO ==================
+ *
+ * `Cartera/Obtener` con `periodo='*'` devuelve una fila por documento **y por
+ * mes**, y `SaldoFinal` es el saldo al CIERRE de ese mes. Sumar las filas
+ * multiplica la deuda por los meses que el documento estuvo abierto: medido, ~6x
+ * (15.766.172.168 contra 2.577.420.853 reales).
+ *
+ * La evidencia, factura 196509 / tercero 900323135 / 2026 — tres filas idénticas
+ * salvo tres campos:
+ *   Periodo 6 · SaldoInicial 0         · ValorGenerado 1.793.018 · SaldoFinal 1.793.018
+ *   Periodo 7 · SaldoInicial 1.793.018 · ValorGenerado 0         · SaldoFinal 1.793.018
+ *   Periodo 8 · SaldoInicial 1.793.018 · ValorGenerado 0         · SaldoFinal 1.793.018
+ * El `ValorGenerado` sólo aparece en el 6: la factura se emitió ese mes y en los
+ * dos siguientes se arrastra sin pagar. Es UNA deuda, no tres.
+ *
+ * Por eso el builder pasa UN periodo, el vigente, y este agregador asume que las
+ * filas que recibe son de un solo periodo. Si alguien vuelve a pasarle
+ * `periodo='*'` "para tener la serie mensual", todas las cifras de abajo
+ * —totalAbierto, buckets, topDeudores, porVendedor— se multiplican por ~6.
+ * Ver lib/hgi/periodoVigente.ts para la detección y los casos borde.
+ *
+ * ==============================================================================
+ *
  * El endpoint devuelve UN registro por documento/cuota de cartera. Aquí NO se
  * guardan los ~32k documentos crudos en el snapshot: se agregan a nivel de tercero
  * (data[] liviano para lookups) y se precalcula el resumen de aging (buckets, top
