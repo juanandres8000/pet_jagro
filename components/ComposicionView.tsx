@@ -240,7 +240,31 @@ export default function ComposicionView() {
       <section className="space-y-3">
         <SectionTitle>Composición por clase de documento</SectionTitle>
         <Card className="overflow-hidden">
-          <BarrasDivergentes grupos={clases} onClick={(c) => abrirDrill(c)} seleccion={drill?.clase ?? null} />
+          {clases.length === 1 ? (
+            // El ERP de esta instancia sólo usa la clase 0 (GENERAL). Un gráfico
+            // de una barra al 100% no es una composición: es el total con otro
+            // nombre. Se dice explícitamente en vez de fingir un desglose, por la
+            // misma razón por la que no hay selector de tipo de cartera.
+            // El componente de barras se conserva: si el ERP empieza a clasificar,
+            // esto se convierte en el gráfico sin tocar nada.
+            <div className="p-6">
+              <p className="text-sm text-ink">
+                El ERP clasifica toda la cartera en una sola clase:{' '}
+                <span className="font-medium">{clases[0].nombre}</span>. No hay composición por clase que graficar
+                mientras eso no cambie.
+              </p>
+              <p className="mt-2 text-xs text-ink-muted">
+                Lo que sí discrimina el dato es el signo del saldo: {miles(clases[0].terceros)} terceros, de los cuales{' '}
+                <span className="text-danger">{miles(clases[0].enNegativo)}</span> tienen saldo a favor por{' '}
+                <span className="tabular text-danger" title={formatPrice(clases[0].saldoNegativo)}>
+                  {kpiMoney(clases[0].saldoNegativo).value}
+                </span>
+                . Están al final de la tabla de terceros.
+              </p>
+            </div>
+          ) : (
+            <BarrasDivergentes grupos={clases} onClick={(c) => abrirDrill(c)} seleccion={drill?.clase ?? null} />
+          )}
         </Card>
       </section>
 
@@ -340,7 +364,7 @@ export default function ComposicionView() {
           <Card className="overflow-hidden">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3">
               <p className="text-xs text-ink-muted">
-                {miles(drill.total)} terceros · página {drill.page} de {totalPaginasDrill}
+                {miles(drill.total)} registros · página {drill.page} de {totalPaginasDrill}
                 {drill.grupo ? ` · saldo de la clase ${formatPrice(drill.grupo.saldo)}` : ''}
                 {cargandoDrill ? ' · actualizando…' : ''}
               </p>
@@ -362,7 +386,7 @@ export default function ComposicionView() {
               </div>
             </div>
             {!drill.filas.length ? (
-              <EmptyState title="Sin terceros en esta clase" />
+              <EmptyState title="Sin registros en esta clase" />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[640px] text-sm">
