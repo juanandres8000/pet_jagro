@@ -118,8 +118,12 @@ async function fetchVentana(r: Rango): Promise<VentaLinea[]> {
   throw new Error(`Ventas ${r.desde}..${r.hasta} falló tras ${REINTENTOS} intentos: ${ultimo?.message}`);
 }
 
-/** Ejecuta las ventanas con concurrencia limitada y una pausa entre llamadas. */
-async function fetchRango(r: Rango): Promise<VentaLinea[]> {
+/**
+ * Ejecuta las ventanas con concurrencia limitada y una pausa entre llamadas.
+ * Exportada porque el backfill mensual (lib/hgi/ventasMensual.ts) trae meses
+ * históricos con exactamente la misma estrategia de troceo y reintentos.
+ */
+export async function fetchRango(r: Rango): Promise<VentaLinea[]> {
   const trozos = trocear(r);
   const out: VentaLinea[] = [];
   let i = 0;

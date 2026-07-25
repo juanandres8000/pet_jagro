@@ -211,8 +211,12 @@ export function totales(ls: VentaLinea[]): VentaTotales {
   return { venta, costo, margen, margenPct: pct(margen, venta), iva, descuento, lineas: ls.length, documentos: docs.size };
 }
 
-/** Agrupa por una clave y devuelve el ranking ordenado por venta desc. */
-function agrupar(
+/**
+ * Agrupa por una clave y devuelve el ranking ordenado por venta desc.
+ * Exportada: la usan el agregado mensual y /api/gerencia para rearmar rankings
+ * sobre subconjuntos filtrados, con las mismas reglas de margen.
+ */
+export function agrupar(
   ls: VentaLinea[],
   clave: (l: VentaLinea) => string,
   nombre: (l: VentaLinea) => string,

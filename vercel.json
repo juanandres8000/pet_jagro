@@ -6,6 +6,7 @@
     { "path": "/api/hgi/refresh?dataset=pedidos", "schedule": "10,25,40,55 * * * *" },
     { "path": "/api/hgi/refresh?dataset=cartera", "schedule": "13,43 * * * *" },
     { "path": "/api/hgi/refresh?dataset=ventas", "schedule": "7 * * * *" },
-    { "path": "/api/hgi/refresh?dataset=recaudo", "schedule": "37 * * * *" }
+    { "path": "/api/hgi/refresh?dataset=recaudo", "schedule": "37 * * * *" },
+    { "path": "/api/hgi/refresh?dataset=ventas_mensual", "schedule": "22 * * * *" }
   ]
 }

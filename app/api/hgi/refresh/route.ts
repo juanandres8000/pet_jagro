@@ -6,6 +6,7 @@ import { buildPedidosSnapshot } from '@/lib/hgi/pedidos';
 import { buildCarteraSnapshot } from '@/lib/hgi/cartera';
 import { buildVentasSnapshot } from '@/lib/hgi/ventas';
 import { buildRecaudoSnapshot } from '@/lib/hgi/recaudo';
+import { refreshVentasMensual } from '@/lib/hgi/ventasMensual';
 import { writeSnapshot, type Dataset } from '@/lib/hgi/snapshotStore';
 import type { BuildResult } from '@/lib/hgi/readThrough';
 
@@ -28,10 +29,36 @@ const BUILDERS: Record<Dataset, () => Promise<BuildResult<unknown>>> = {
 
 const ALL: Dataset[] = ['catalog', 'clients', 'pedidos', 'cartera', 'ventas', 'recaudo'];
 
-/** Ejecuta el rebuild de los datasets pedidos (o todos) y guarda en Neon. */
+/**
+ * `ventas_mensual` no es un dataset de hgi_snapshot: escribe en su propia tabla,
+ * una fila por mes, y construye UN mes por corrida (ver lib/hgi/ventasMensual.ts).
+ * Por eso va por rama aparte y no por el mapa BUILDERS, que asume
+ * build() -> writeSnapshot(dataset, ...).
+ *   ?dataset=ventas_mensual[&mes=YYYY-MM]   ← `mes` fuerza uno concreto
+ */
+const DATASET_MENSUAL = 'ventas_mensual';
+
+/** Ejecuta el rebuild de los datasets pedidos (o todos) y guarda en Supabase. */
 async function runRefresh(req: Request): Promise<NextResponse> {
-  const param = new URL(req.url).searchParams.get('dataset') as Dataset | null;
-  const datasets: Dataset[] = param && ALL.includes(param) ? [param] : ALL;
+  const url = new URL(req.url);
+  const param = url.searchParams.get('dataset');
+
+  if (param === DATASET_MENSUAL) {
+    const mesParam = url.searchParams.get('mes') ?? undefined;
+    if (mesParam && !/^\d{4}-\d{2}$/.test(mesParam)) {
+      return NextResponse.json({ ok: false, mensaje: 'Parámetro "mes" debe ser YYYY-MM' }, { status: 400 });
+    }
+    try {
+      const r = await refreshVentasMensual(mesParam);
+      return NextResponse.json({ ok: true, dataset: DATASET_MENSUAL, ...r });
+    } catch (err) {
+      const mensaje = err instanceof HgiError ? `HgiError ${err.codigo}: ${err.message}` : (err as Error).message;
+      console.error(`[refresh] dataset "${DATASET_MENSUAL}" falló: ${mensaje}`);
+      return NextResponse.json({ ok: false, dataset: DATASET_MENSUAL, mensaje }, { status: 502 });
+    }
+  }
+
+  const datasets: Dataset[] = param && ALL.includes(param as Dataset) ? [param as Dataset] : ALL;
 
   const results: Record<string, unknown> = {};
   let anyError = false;
