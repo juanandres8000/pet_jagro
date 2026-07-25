@@ -71,7 +71,16 @@ async function runRefresh(req: Request): Promise<NextResponse> {
     try {
       const build = await BUILDERS[dataset]();
       const builtAt = await writeSnapshot(dataset, build.data, build.sourceCounts);
-      results[dataset] = { ok: true, built_at: builtAt.toISOString(), count: build.data.length };
+      if (builtAt === null) {
+        // Guard de snapshot vacío: no se escribió nada y el anterior sigue vivo.
+        // Cuenta como error de la corrida para que el 502 lo haga visible.
+        anyError = true;
+        const mensaje = `build devolvió 0 filas; snapshot anterior preservado (no se sobreescribió)`;
+        console.error(`[refresh] dataset "${dataset}": ${mensaje}`);
+        results[dataset] = { ok: false, mensaje, rechazadoPorGuard: true };
+      } else {
+        results[dataset] = { ok: true, built_at: builtAt.toISOString(), count: build.data.length };
+      }
     } catch (err) {
       anyError = true;
       const mensaje = err instanceof HgiError ? `HgiError ${err.codigo}: ${err.message}` : (err as Error).message;

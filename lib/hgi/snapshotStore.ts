@@ -67,12 +67,35 @@ export async function readSnapshot<T>(dataset: Dataset): Promise<Snapshot<T> | n
   };
 }
 
-/** Guarda (upsert) el snapshot de un dataset con built_at = ahora. */
+/**
+ * Guarda (upsert) el snapshot de un dataset con built_at = ahora.
+ *
+ * GUARD CONTRA SNAPSHOTS VACÍOS — aplica a TODOS los datasets.
+ * Un build que devuelve 0 filas NO sobreescribe un snapshot que ya tiene filas.
+ * Devuelve `null` en ese caso, para que el llamador sirva el snapshot bueno.
+ *
+ * Por qué: un build puede vaciarse sin lanzar. Caso real (2026-07-25 03:50Z):
+ * `Terceros/Obtener` falló, el fallback `ObtenerLista` devolvió los 6.160
+ * terceros pero SIN CodigoTipoTercero, el filtro de tipos 1+7 los descartó todos
+ * y `buildClientsSnapshot` retornó `data: []` tan campante. Se escribieron 0
+ * filas encima de 4.001 buenas y la vista de Clientes quedó vacía en producción
+ * ~19 min. El serve-stale de readThrough no pudo actuar porque no hubo
+ * excepción: el build "tuvo éxito" devolviendo nada.
+ *
+ * Es la misma clase de bug que el clearToken incondicional: destruir estado
+ * compartido bueno a partir de una lectura degradada. Y la solución es la misma
+ * forma —una condición en el propio UPDATE— para que sea ATÓMICA: comprobar el
+ * conteo antes en JS dejaría una ventana en la que otro lambda escribe data
+ * buena y nosotros la pisamos igual.
+ *
+ * Un dataset legítimamente vacío (primer build, o tabla sin datos) sí se escribe:
+ * la condición sólo protege cuando YA había filas.
+ */
 export async function writeSnapshot<T>(
   dataset: Dataset,
   data: T[],
   sourceCounts: Record<string, unknown>,
-): Promise<Date> {
+): Promise<Date | null> {
   await ensureSnapshotTable();
   const sql = getDb();
   // sql.json() — NO `${JSON.stringify(x)}::jsonb`. postgres.js serializa el string
@@ -81,6 +104,8 @@ export async function writeSnapshot<T>(
   // que la caché fallaba SIEMPRE y cada request reconstruía contra HGINet.
   // Con el driver de Neon el patrón viejo sí producía un array; es un cambio de
   // comportamiento del driver que tsc y next build no detectan.
+  // El WHERE del DO UPDATE es el guard: sólo sobreescribe si la data nueva trae
+  // filas, o si lo que había ya estaba vacío/nulo (nada que preservar).
   const rows = (await sql`
     INSERT INTO hgi_snapshot (dataset, data, built_at, source_counts)
     VALUES (${dataset}, ${sql.json(data as never)}, NOW(), ${sql.json(sourceCounts as never)})
@@ -88,7 +113,24 @@ export async function writeSnapshot<T>(
       SET data = EXCLUDED.data,
           built_at = EXCLUDED.built_at,
           source_counts = EXCLUDED.source_counts
+      WHERE jsonb_array_length(EXCLUDED.data) > 0
+         OR hgi_snapshot.data IS NULL
+         OR jsonb_typeof(hgi_snapshot.data) <> 'array'
+         OR jsonb_array_length(hgi_snapshot.data) = 0
     RETURNING built_at
   `) as unknown as Array<{ built_at: string | Date }>;
+
+  if (rows.length === 0) {
+    // Rechazado por el guard. Se relee el conteo sólo en este camino (raro) para
+    // que el log diga exactamente qué se preservó.
+    const prev = (await sql`
+      SELECT jsonb_array_length(data) AS filas FROM hgi_snapshot WHERE dataset = ${dataset}
+    `) as unknown as Array<{ filas: number | null }>;
+    console.error(
+      `[snapshot] build de "${dataset}" devolvió 0 filas, snapshot anterior de ${prev[0]?.filas ?? '?'} filas preservado`,
+    );
+    return null;
+  }
+
   return new Date(rows[0].built_at);
 }

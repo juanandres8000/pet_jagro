@@ -4,8 +4,20 @@ import type { BuildResult } from './readThrough';
 
 /**
  * Construcción del dataset de Clientes (Terceros de HGINet).
- * Método real verificado: Api/Terceros/Obtener (también responde ObtenerLista).
- * Una sola llamada (nunca por tercero). Usa hgiGet (token cacheado).
+ * Método real verificado: **Api/Terceros/Obtener**. Una sola llamada (nunca por
+ * tercero). Usa hgiGet (token cacheado).
+ *
+ * ObtenerLista NO es un método equivalente y NO se usa como fallback.
+ * El comentario anterior decía "también responde ObtenerLista" y era falso en lo
+ * que importa: responde, y devuelve los 6.160 terceros, pero SIN
+ * CodigoTipoTercero. Como el filtro de abajo se queda sólo con los tipos 1 y 7,
+ * el fallback producía CERO clientes sin lanzar ninguna excepción.
+ * Eso pasó en producción el 2026-07-25 03:50Z: Obtener falló, entró el fallback,
+ * el build devolvió data vacía y se escribió encima del snapshot de 4.001 filas.
+ * La vista de Clientes quedó vacía ~19 min.
+ * Si Obtener falla, esto debe fallar RUIDOSAMENTE para que el serve-stale sirva
+ * el snapshot anterior. Un fallback que devuelve data inservible es peor que un
+ * error.
  *
  * FILTRO DE CLIENTES REALES: solo viajan al frontend los CodigoTipoTercero
  * 1 (CLIENTES GENERALES) y 7 (CLIENTES MOSTRADOR). Proveedores, empleados,
@@ -23,7 +35,8 @@ const PARAMS = {
   codigo_vendedor: '*',
 };
 
-const METODOS = ['Obtener', 'ObtenerLista'];
+// Un solo método. Ver la nota de arriba sobre por qué ObtenerLista no entra.
+const METODO = 'Obtener';
 
 interface HgiTerceroTipo {
   Codigo?: string | number;
@@ -63,19 +76,19 @@ function contarTipos(clientes: Cliente[], tipos: Map<string, string>): Record<st
 }
 
 async function fetchTerceros(): Promise<{ raw: HgiTercero[]; source: string }> {
-  let lastError = 'Terceros sin datos';
-  for (const metodo of METODOS) {
-    try {
-      const r = await hgiGet<HgiTercero[]>('Terceros', metodo, PARAMS);
-      if (Array.isArray(r) && r.length > 0) return { raw: r, source: metodo };
-      lastError = `Terceros/${metodo} devolvió ${Array.isArray(r) ? 'array vacío' : 'respuesta no-array'}`;
-    } catch (err) {
-      lastError = err instanceof HgiError ? `HgiError ${err.codigo}: ${err.message}` : (err as Error).message;
-    }
+  let motivo: string;
+  try {
+    const r = await hgiGet<HgiTercero[]>('Terceros', METODO, PARAMS);
+    if (Array.isArray(r) && r.length > 0) return { raw: r, source: METODO };
+    motivo = `Terceros/${METODO} devolvió ${Array.isArray(r) ? 'array vacío' : 'respuesta no-array'}`;
+  } catch (err) {
+    motivo = err instanceof HgiError ? `HgiError ${err.codigo}: ${err.message}` : (err as Error).message;
   }
-  // Si Terceros falla del todo, lanzamos: el read-through degrada (serve-stale)
-  // o la route responde lista vacía + aviso, sin tumbar la vista.
-  throw new Error(lastError);
+  // Se lanza sin intentar alternativas: el read-through degrada (serve-stale) y
+  // la vista sigue con el snapshot bueno. Fallar aquí es el comportamiento
+  // correcto, no una limitación.
+  console.error(`[clientes] Terceros/${METODO} no devolvió datos usables: ${motivo}`);
+  throw new Error(motivo);
 }
 
 export async function buildClientsSnapshot(): Promise<BuildResult<Cliente>> {
@@ -86,6 +99,19 @@ export async function buildClientsSnapshot(): Promise<BuildResult<Cliente>> {
 
   // Solo clientes reales (tipo 1 + 7) viajan al frontend.
   const clientes = mapTerceros(terceros.raw, tipos).filter((c) => TIPOS_CLIENTE.includes(c.codigoTipoTercero));
+
+  // Que lleguen terceros y NINGUNO clasifique es un fallo de la fuente, no un
+  // resultado legítimo: significa que CodigoTipoTercero no vino usable. Se lanza
+  // para que el serve-stale sirva el snapshot anterior. El guard de
+  // writeSnapshot ya impediría el daño, pero fallar aquí da el diagnóstico en el
+  // log en vez de un "0 filas" mudo.
+  if (terceros.raw.length > 0 && clientes.length === 0) {
+    const msg =
+      `Terceros/${METODO} devolvió ${terceros.raw.length} terceros pero ninguno de tipo ` +
+      `${TIPOS_CLIENTE.join('/')}: CodigoTipoTercero no vino usable`;
+    console.error(`[clientes] ${msg}`);
+    throw new Error(msg);
+  }
 
   return {
     data: clientes,

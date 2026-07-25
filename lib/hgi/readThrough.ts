@@ -39,6 +39,18 @@ export async function readThrough<T>(
   try {
     const built = await build();
     const builtAt = await writeSnapshot(dataset, built.data, built.sourceCounts);
+
+    // writeSnapshot devuelve null cuando su guard rechaza la escritura: el build
+    // dio 0 filas y había un snapshot con datos. Ese build NO se sirve — se sirve
+    // el snapshot bueno marcado stale, igual que si el build hubiera lanzado.
+    // Sin esto la ruta devolvería el array vacío del build aunque la BD conserve
+    // la data buena, y el guard no serviría de nada de cara al usuario.
+    if (builtAt === null) {
+      const mensaje = `El rebuild de "${dataset}" devolvió 0 filas; se conserva y sirve el snapshot anterior.`;
+      if (snap) return { snapshot: snap, cached: true, stale: true, rebuildError: mensaje };
+      throw new Error(mensaje);
+    }
+
     return {
       snapshot: { data: built.data, builtAt, sourceCounts: built.sourceCounts },
       cached: false,
