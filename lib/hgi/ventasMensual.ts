@@ -45,6 +45,13 @@ export function rangoDeMes(mes: string, hoy = hoyColombia()): Rango {
   return { desde, hasta: finMes > hoy ? hoy : finMes };
 }
 
+/** Desplaza un 'YYYY-MM' en n meses (n negativo va hacia atrás). */
+export function desplazarMes(mes: string, n: number): string {
+  const [y, m] = mes.split('-').map(Number);
+  const total = y * 12 + (m - 1) + n;
+  return `${Math.floor(total / 12)}-${pad((total % 12) + 1)}`;
+}
+
 /** Los HORIZONTE_MESES meses hasta el actual, del más nuevo al más viejo. */
 export function mesesDelHorizonte(hoy = hoyColombia()): string[] {
   const [y, m] = hoy.slice(0, 7).split('-').map(Number);

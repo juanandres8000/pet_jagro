@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { readSnapshot } from '@/lib/hgi/snapshotStore';
 import { readAnio, readMes, type MesAgregado } from '@/lib/hgi/ventasMensualStore';
 import { hoyColombia } from '@/lib/hgi/ventas';
-import { mesDe, mesesDelHorizonte } from '@/lib/hgi/ventasMensual';
+import { mesDe, mesesDelHorizonte, desplazarMes } from '@/lib/hgi/ventasMensual';
 import { totales, agrupar, type VentaLinea, type VentaPorClave } from '@/lib/hgi/mappers/ventas';
 import type { CarteraResumen } from '@/lib/hgi/mappers/cartera';
 
@@ -362,6 +362,28 @@ async function vistaMes(mes: string, f: Filtros, page: number, pageSize: number)
     clientesActivos: nits.size,
   };
 
+  // Variación mes vs mes anterior. SÓLO sin filtros: comparar un mes filtrado
+  // contra el anterior completo daría una caída inventada por el filtro.
+  // Dos orígenes, ambos data real: la fila mensual si el backfill ya llegó, y si
+  // no, el total de mesAnterior que el builder de `ventas` ya calcula (es
+  // exactamente el mes previo al del snapshot, que es el que estamos viendo).
+  const sinFiltros = !f.vendedor && !f.linea && !f.grupo && !f.cliente;
+  let variacionMes: { venta: number | null; margen: number | null; margenPctPuntos: number | null } | null = null;
+  if (sinFiltros) {
+    const prev = await readMes(desplazarMes(mes, -1));
+    const alt = snap.sourceCounts?.mesAnterior as { venta?: number; margen?: number; margenPct?: number } | undefined;
+    const ventaAnt = prev ? prev.venta : alt?.venta;
+    const margenAnt = prev ? prev.margen : alt?.margen;
+    const margenPctAnt = prev ? pct(prev.margen, prev.venta) : alt?.margenPct;
+    if (typeof ventaAnt === 'number' && ventaAnt !== 0) {
+      variacionMes = {
+        venta: variacion(kpis.venta, ventaAnt),
+        margen: typeof margenAnt === 'number' ? variacion(kpis.margen, margenAnt) : null,
+        margenPctPuntos: typeof margenPctAnt === 'number' ? kpis.margenPct - margenPctAnt : null,
+      };
+    }
+  }
+
   const docs = aDocumentos(filtradas);
   const total = docs.length;
   const maxPage = Math.max(1, Math.ceil(total / pageSize));
@@ -387,6 +409,7 @@ async function vistaMes(mes: string, f: Filtros, page: number, pageSize: number)
     porLinea: agrupar(filtradas, (l) => l.linea, (l) => l.linea, 15),
     porVendedor: agrupar(filtradas, (l) => l.vendedor, (l) => l.vendedor, 15),
     documentos: { page: pageSafe, pageSize, total, filas },
+    variacion: variacionMes,
     cartera,
     periodo: snap.sourceCounts?.periodo ?? null,
     builtAt: snap.builtAt.toISOString(),
