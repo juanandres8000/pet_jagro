@@ -8,8 +8,9 @@ import InventarioView from '@/components/InventarioView';
 import CatalogoView from '@/components/CatalogoView';
 import ClientesView from '@/components/ClientesView';
 import CarteraView from '@/components/CarteraView';
+import ComposicionView from '@/components/ComposicionView';
 
-type Tab = 'gerencia' | 'picking' | 'inventario' | 'catalogo' | 'clientes' | 'cartera';
+type Tab = 'gerencia' | 'picking' | 'inventario' | 'catalogo' | 'clientes' | 'cartera' | 'composicion';
 
 interface MenuItem {
   id: Tab;
@@ -49,7 +50,10 @@ const MENU_GROUPS: MenuGroup[] = [
   },
   {
     label: 'Finanzas',
-    items: [{ id: 'cartera', label: 'Cartera' }],
+    items: [
+      { id: 'cartera', label: 'Cartera' },
+      { id: 'composicion', label: 'Composición' },
+    ],
   },
 ];
 
@@ -169,6 +173,7 @@ export default function Home() {
             {activeTab === 'catalogo' && <CatalogoView />}
             {activeTab === 'clientes' && <ClientesView initialSearch={clientesSearch} />}
             {activeTab === 'cartera' && <CarteraView onVerCliente={verClienteDesdeCartera} />}
+            {activeTab === 'composicion' && <ComposicionView />}
           </div>
         </div>
       </main>

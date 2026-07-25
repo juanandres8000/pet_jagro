@@ -6,6 +6,7 @@ import { buildPedidosSnapshot } from '@/lib/hgi/pedidos';
 import { buildCarteraSnapshot } from '@/lib/hgi/cartera';
 import { buildVentasSnapshot } from '@/lib/hgi/ventas';
 import { buildRecaudoSnapshot } from '@/lib/hgi/recaudo';
+import { buildClasesSnapshot } from '@/lib/hgi/clases';
 import { refreshVentasMensual } from '@/lib/hgi/ventasMensual';
 import { writeSnapshot, type Dataset } from '@/lib/hgi/snapshotStore';
 import type { BuildResult } from '@/lib/hgi/readThrough';
@@ -25,9 +26,12 @@ const BUILDERS: Record<Dataset, () => Promise<BuildResult<unknown>>> = {
   cartera: buildCarteraSnapshot,
   ventas: buildVentasSnapshot,
   recaudo: buildRecaudoSnapshot,
+  clases: buildClasesSnapshot,
 };
 
-const ALL: Dataset[] = ['catalog', 'clients', 'pedidos', 'cartera', 'ventas', 'recaudo'];
+// `clases` no tiene cron: se reconstruye por TTL en /api/clases (60 min) o a
+// mano por esta ruta. Su build es una sola llamada de ~32s, no necesita prewarm.
+const ALL: Dataset[] = ['catalog', 'clients', 'pedidos', 'cartera', 'ventas', 'recaudo', 'clases'];
 
 /**
  * `ventas_mensual` no es un dataset de hgi_snapshot: escribe en su propia tabla,
