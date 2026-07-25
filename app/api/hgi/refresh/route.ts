@@ -72,10 +72,12 @@ async function runRefresh(req: Request): Promise<NextResponse> {
       const build = await BUILDERS[dataset]();
       const builtAt = await writeSnapshot(dataset, build.data, build.sourceCounts);
       if (builtAt === null) {
-        // Guard de snapshot vacío: no se escribió nada y el anterior sigue vivo.
+        // Guard de tamaño: no se escribió nada y el snapshot anterior sigue vivo.
         // Cuenta como error de la corrida para que el 502 lo haga visible.
         anyError = true;
-        const mensaje = `build devolvió 0 filas; snapshot anterior preservado (no se sobreescribió)`;
+        const mensaje =
+          `build devolvió ${build.data.length} filas y no pasó el guard de tamaño; ` +
+          'snapshot anterior preservado (no se sobreescribió)';
         console.error(`[refresh] dataset "${dataset}": ${mensaje}`);
         results[dataset] = { ok: false, mensaje, rechazadoPorGuard: true };
       } else {

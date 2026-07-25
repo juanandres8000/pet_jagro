@@ -40,13 +40,16 @@ export async function readThrough<T>(
     const built = await build();
     const builtAt = await writeSnapshot(dataset, built.data, built.sourceCounts);
 
-    // writeSnapshot devuelve null cuando su guard rechaza la escritura: el build
-    // dio 0 filas y había un snapshot con datos. Ese build NO se sirve — se sirve
-    // el snapshot bueno marcado stale, igual que si el build hubiera lanzado.
-    // Sin esto la ruta devolvería el array vacío del build aunque la BD conserve
-    // la data buena, y el guard no serviría de nada de cara al usuario.
+    // writeSnapshot devuelve null cuando su guard de tamaño rechaza la escritura:
+    // el build trajo menos del ratio mínimo de las filas que ya había (0 filas es
+    // el extremo). Ese build NO se sirve — se sirve el snapshot bueno marcado
+    // stale, igual que si el build hubiera lanzado. Sin esto la ruta devolvería la
+    // data degradada del build aunque la BD conserve la buena, y el guard no
+    // serviría de nada de cara al usuario.
     if (builtAt === null) {
-      const mensaje = `El rebuild de "${dataset}" devolvió 0 filas; se conserva y sirve el snapshot anterior.`;
+      const mensaje =
+        `El rebuild de "${dataset}" no pasó el guard de tamaño (devolvió ${built.data.length} filas); ` +
+        'se conserva y sirve el snapshot anterior.';
       if (snap) return { snapshot: snap, cached: true, stale: true, rebuildError: mensaje };
       throw new Error(mensaje);
     }

@@ -153,6 +153,28 @@ Cualquier ruta que toque la BD debe declarar `export const runtime = 'nodejs'`
 texto a Postgres y da `syntax error`. `tsc` y `next build` no lo detectan (es
 texto dentro de un string). Los comentarios van **arriba** del template.
 
+### Regla dura: nunca probar escrituras contra un dataset real
+
+**Cualquier prueba que escriba en `hgi_snapshot` va contra un dataset desechable
+`__test_<algo>`, nunca contra `clients`, `cartera`, `clases`, `ventas`, `recaudo`,
+`catalog` ni `pedidos`.** Crear la fila, probar, y borrarla al final:
+
+```sql
+INSERT INTO hgi_snapshot (dataset, data, built_at, source_counts)
+VALUES ('__test_guard', '[]'::jsonb, NOW(), '{}'::jsonb);
+-- … prueba …
+DELETE FROM hgi_snapshot WHERE dataset = '__test_guard';
+```
+
+No es teórico: probando el guard de snapshots vacíos se escribió una fila de
+prueba encima de las 1.271 reales de `clases`. Se recuperó sólo porque el rebuild
+contra HGINet funcionó a la primera — es decir, salió bien por suerte, no por
+diseño. Un dataset cuyo rebuild sea lento, esté sin permisos o dependa de un
+endpoint caído se queda roto hasta que alguien lo note.
+
+Los datasets `__test_*` no están en el tipo `Dataset` ni en `ALL`, así que ningún
+cron los toca y no aparecen en ninguna vista.
+
 ### Trampas del pooler
 
 Las dos son consecuencia directa de `max: 1` + pooler en *transaction mode*. Las
