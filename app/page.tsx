@@ -9,8 +9,9 @@ import CatalogoView from '@/components/CatalogoView';
 import ClientesView from '@/components/ClientesView';
 import CarteraView from '@/components/CarteraView';
 import ComposicionView from '@/components/ComposicionView';
+import VendedoresView from '@/components/VendedoresView';
 
-type Tab = 'gerencia' | 'picking' | 'inventario' | 'catalogo' | 'clientes' | 'cartera' | 'composicion';
+type Tab = 'gerencia' | 'picking' | 'inventario' | 'catalogo' | 'clientes' | 'cartera' | 'composicion' | 'vendedores';
 
 interface MenuItem {
   id: Tab;
@@ -52,6 +53,7 @@ const MENU_GROUPS: MenuGroup[] = [
     label: 'Finanzas',
     items: [
       { id: 'cartera', label: 'Cartera' },
+      { id: 'vendedores', label: 'Vendedores' },
       // COMPOSICIÓN OCULTA — mismo patrón que Operación: se quita la entrada de
       // nav, la rama de render y el componente siguen montados abajo.
       // Su premisa no existe en esta instancia: el ERP clasifica TODA la cartera
@@ -182,6 +184,7 @@ export default function Home() {
             {activeTab === 'clientes' && <ClientesView initialSearch={clientesSearch} />}
             {activeTab === 'cartera' && <CarteraView onVerCliente={verClienteDesdeCartera} />}
             {activeTab === 'composicion' && <ComposicionView />}
+            {activeTab === 'vendedores' && <VendedoresView />}
           </div>
         </div>
       </main>
