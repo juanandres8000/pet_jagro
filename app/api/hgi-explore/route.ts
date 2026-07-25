@@ -151,6 +151,31 @@ export async function GET(req: Request) {
   const soloA = [...setA].filter((k) => !setB.has(k));
   const soloB = [...setB].filter((k) => !setA.has(k));
 
+  // Claves repetidas en cada lado: si A trae más filas que claves únicas, hay que
+  // saber si son aplicaciones legítimas distintas o filas duplicadas.
+  const dups = (filas: Fila[]) => {
+    const m = new Map<string, Fila[]>();
+    for (const f of filas) {
+      const k = clave(f);
+      m.set(k, [...(m.get(k) ?? []), f]);
+    }
+    return [...m].filter(([, v]) => v.length > 1);
+  };
+  const dupA = dups(a);
+  const dupB = dups(b);
+  const detalleDupA = dupA.slice(0, 3).map(([k, v]) => ({
+    clave: k,
+    veces: v.length,
+    filas: v.map((f) => ({
+      valor: num(f.ValorDetallePago),
+      concepto: str(f.Concepto),
+      descConcepto: str(f.DescripcionConcepto),
+      fechaPago: str(f.FechaPago).slice(0, 10),
+      clase: str(f.CodigoClase),
+      local: str(f.CodigoLocal),
+    })),
+  }));
+
   const camposA = new Set(Object.keys(poblacion(a)));
   const camposB = new Set(Object.keys(poblacion(b)));
 
@@ -164,6 +189,12 @@ export async function GET(req: Request) {
     veredicto: calza ? 'CALZA' : 'NO CALZA',
     A: { endpoint: 'Cartera/ObtenerRecaudo', ms: tA, ...rA },
     B: { endpoint: 'Cartera/ObtenerRecaudoPorVendedor', ms: tB, ...rB },
+    duplicados: {
+      clavesRepetidasEnA: dupA.length,
+      clavesRepetidasEnB: dupB.length,
+      filasExtraPorDuplicadoEnA: dupA.reduce((acc, [, v]) => acc + v.length - 1, 0),
+      detalleA: detalleDupA,
+    },
     diferencias: {
       filas: rB.filas - rA.filas,
       clavesUnicas: rB.clavesUnicas - rA.clavesUnicas,
