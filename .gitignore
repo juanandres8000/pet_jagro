@@ -36,3 +36,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .env*
+
+# evidencia para el soporte de HGINet (datos reales de clientes y de la conexión)
+evidencia-hginet*.json
+evidencia-hginet*.md
+correo-miryam.md
