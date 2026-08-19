@@ -381,7 +381,7 @@ literales (ver `ALIGN` en `components/ui/index.tsx`), nunca `` `text-${align}` `
 
 ## URLs
 - Producción: https://pet-jagro.vercel.app
-- Repo: https://github.com/intelguy8000/pet_jagro
+- Repo: https://github.com/juanandres8000/pet_jagro
 
 ## Notas
 - **Política: sólo data real de HGINet, cero mock visible.** Picking, Inventario,
