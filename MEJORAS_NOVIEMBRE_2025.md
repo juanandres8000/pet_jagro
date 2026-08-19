@@ -716,7 +716,7 @@ interface CreditNote {
 Implementado por: **Claude Code**
 Fecha: **Noviembre 2025**
 Versión: **2.0**
-Repo: https://github.com/intelguy8000/pet_jagro
+Repo: https://github.com/juanandres8000/pet_jagro
 
 Para feedback o preguntas sobre estas mejoras, referirse a este documento.
 

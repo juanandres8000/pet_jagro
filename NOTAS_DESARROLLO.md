@@ -502,7 +502,7 @@ type OrderStatus = "pending" | "in_progress"
 ## 📞 Contactos Clave
 
 ### Técnico
-- **Repositorio**: https://github.com/intelguy8000/pet_jagro
+- **Repositorio**: https://github.com/juanandres8000/pet_jagro
 - **Issues**: GitHub Issues
 - **Deployment**: Vercel Dashboard
 

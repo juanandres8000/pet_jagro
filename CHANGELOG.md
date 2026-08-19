@@ -187,7 +187,7 @@ El proyecto sigue [Semantic Versioning](https://semver.org/):
 ---
 
 ## Enlaces
-- [Repositorio GitHub](https://github.com/intelguy8000/pet_jagro)
+- [Repositorio GitHub](https://github.com/juanandres8000/pet_jagro)
 - [Documentación Completa](./DOCUMENTACION.md)
 - [Deployment en Vercel](https://pet-jagro.vercel.app)
 

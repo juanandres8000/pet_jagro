@@ -302,7 +302,7 @@ interface OrderItem {
 ### Instalación
 ```bash
 # Clonar repositorio
-git clone https://github.com/intelguy8000/pet_jagro.git
+git clone https://github.com/juanandres8000/pet_jagro.git
 cd pet_jagro
 
 # Instalar dependencias
@@ -432,7 +432,7 @@ NEXT_PUBLIC_API_URL=xxx
 ## 📧 Contacto y Soporte
 
 Para dudas sobre el proyecto:
-- **Repositorio**: https://github.com/intelguy8000/pet_jagro
+- **Repositorio**: https://github.com/juanandres8000/pet_jagro
 - **Issues**: Reportar en GitHub Issues
 - **Cliente**: J Agro, Colombia
 
