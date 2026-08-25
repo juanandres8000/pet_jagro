@@ -8,6 +8,12 @@ import { buildVentasSnapshot } from '@/lib/hgi/ventas';
 import { buildRecaudoSnapshot } from '@/lib/hgi/recaudo';
 import { buildClasesSnapshot } from '@/lib/hgi/clases';
 import { refreshVentasMensual } from '@/lib/hgi/ventasMensual';
+import {
+  refreshPygCuentas,
+  refreshPygBackfill,
+  refreshPygDia,
+  refreshPygCierres,
+} from '@/lib/hgi/pygRefresh';
 import { writeSnapshot, type Dataset } from '@/lib/hgi/snapshotStore';
 import type { BuildResult } from '@/lib/hgi/readThrough';
 
@@ -42,6 +48,34 @@ const ALL: Dataset[] = ['catalog', 'clients', 'pedidos', 'cartera', 'ventas', 'r
  */
 const DATASET_MENSUAL = 'ventas_mensual';
 
+/**
+ * Datasets del P&G. Como `ventas_mensual`, no son datasets de hgi_snapshot:
+ * escriben en pyg_movimiento / pyg_ventana_control / pyg_cuenta y hacen UNA
+ * unidad de trabajo por corrida, con el cursor en tabla. Por eso van por rama
+ * aparte y no por el mapa BUILDERS, que asume build() -> writeSnapshot().
+ *
+ *   ?dataset=pyg_cuentas                    plan PCGA (diario)
+ *   ?dataset=pyg_backfill[&mes=YYYY-MM]     una ventana MENSUAL por invocación
+ *   ?dataset=pyg_dia                        ventanas de un día, últimos 7
+ *   ?dataset=pyg_cierres                    último día de meses sin costo valorizado
+ */
+const DATASETS_PYG = ['pyg_cuentas', 'pyg_backfill', 'pyg_dia', 'pyg_cierres'] as const;
+type DatasetPyg = (typeof DATASETS_PYG)[number];
+
+/** Despacha el dataset del P&G que corresponda. `maxDuration` acota el presupuesto. */
+async function ejecutarPyg(dataset: DatasetPyg, mes?: string): Promise<Record<string, unknown>> {
+  switch (dataset) {
+    case 'pyg_cuentas':
+      return { ...(await refreshPygCuentas()) };
+    case 'pyg_backfill':
+      return { ...(await refreshPygBackfill(mes)) };
+    case 'pyg_dia':
+      return { ...(await refreshPygDia(maxDuration)) };
+    case 'pyg_cierres':
+      return { ...(await refreshPygCierres(maxDuration)) };
+  }
+}
+
 /** Ejecuta el rebuild de los datasets pedidos (o todos) y guarda en Supabase. */
 async function runRefresh(req: Request): Promise<NextResponse> {
   const url = new URL(req.url);
@@ -59,6 +93,21 @@ async function runRefresh(req: Request): Promise<NextResponse> {
       const mensaje = err instanceof HgiError ? `HgiError ${err.codigo}: ${err.message}` : (err as Error).message;
       console.error(`[refresh] dataset "${DATASET_MENSUAL}" falló: ${mensaje}`);
       return NextResponse.json({ ok: false, dataset: DATASET_MENSUAL, mensaje }, { status: 502 });
+    }
+  }
+
+  if (param && (DATASETS_PYG as readonly string[]).includes(param)) {
+    const mesParam = url.searchParams.get('mes') ?? undefined;
+    if (mesParam && !/^\d{4}-\d{2}$/.test(mesParam)) {
+      return NextResponse.json({ ok: false, mensaje: 'Parámetro "mes" debe ser YYYY-MM' }, { status: 400 });
+    }
+    try {
+      const r = await ejecutarPyg(param as DatasetPyg, mesParam);
+      return NextResponse.json({ ok: true, dataset: param, ...r });
+    } catch (err) {
+      const mensaje = err instanceof HgiError ? `HgiError ${err.codigo}: ${err.message}` : (err as Error).message;
+      console.error(`[refresh] dataset "${param}" falló: ${mensaje}`);
+      return NextResponse.json({ ok: false, dataset: param, mensaje }, { status: 502 });
     }
   }
 
