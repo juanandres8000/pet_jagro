@@ -200,6 +200,84 @@ Tres cosas que hay que saber para no re-romperlo:
 Si alguien necesita la serie mensual, hay que pedir **cada periodo por separado y
 jamás sumarlos**. Es el bug que se reintroduce buscando exactamente eso.
 
+### P&G: ventanas, no días sueltos — y el costo llega tarde
+
+**Fuente**: `DocumentosContables/Obtener` por **ventanas** `[desde, hasta]`.
+Mensual para meses cerrados, diaria para el refresco. No es indiferente: cada
+respuesta incluye el pseudo-documento entero, así que un mes completo son 107 MB
+y 30 días sueltos del mismo mes son ~1,2 GB. El plan de cuentas sale de
+`PlanContable/ObtenerPCGA` (801 cuentas, 417 hojas). **NIIF es superset del PCGA
+(807/421) y se ignora**: en los movimientos, `CuentaNIIF` y `CuentaPCGA` son
+idénticas cuando ambas vienen pobladas (32.270 casos, 0 divergencias) y hay 1.160
+líneas con sólo PCGA, ninguna con sólo NIIF.
+
+**Descartar SIEMPRE `IdComprobante = "0"`.** No es un documento: es el volcado de
+saldos por cuenta y tercero que el ERP adjunta a *cualquier* rango — ~45k filas,
+~95 % del body, con `Debito = 0`, `Credito = 0` y `SaldoAnterior` poblado.
+Contarlo como movimiento triplica el conteo de líneas.
+
+**La PK de `pyg_movimiento` es el `Id` de línea de HGINet**, único global
+(verificado: 126.427 Id distintos sobre 126.427 líneas en junio). La reingesta es
+idempotente por `ON CONFLICT (id)`.
+
+**Nunca borrar por fecha.** La sustitución va por
+`(ventana_desde, ventana_hasta, lote <> actual)`: cada ventana sólo puede borrar
+lo que ella misma produjo. El motivo es el **spillover** — una consulta de junio
+devuelve 958 líneas fechadas `2026-07-01`, la apertura del mes siguiente. Se
+guardan con su `fecha` REAL, así que caen en el mes correcto solas, y
+`lineas_fuera_ventana` las deja auditables. Borrar por `fecha` arrasaría filas que
+pertenecen legítimamente a otra ventana.
+
+**Naturaleza** (vive en `migrations/008_pyg_vistas.sql`, no re-descubrir): clase 4
+= créditos − débitos; clases 5 y 6 = débitos − créditos. **`periodo <> 13`**: el 13
+es el cierre anual y duplicaría diciembre. Las clases 7, 8 y 9 no existen en este
+plan — es una comercializadora.
+
+**El costo de ventas llega tarde, y eso no es un bug del código.** El asiento
+`COSTO DE VENTA <MES>` (comprobante **27**, docs correlativos 76=abr 77=may
+78=jun 79=jul) existe desde el día del cierre **pero en cero** hasta que el
+contador lo valoriza. Medido en 2026: sólo abril está valorizado. Por eso
+`pyg_mensual` usa la 6135 si es distinta de cero y si no cae a
+`hgi_ventas_mensual.costo` marcando **`costo_es_fallback`**, y el cron
+`pyg_cierres` re-consulta el último día de esos meses cada 6 h para apagar el
+flag solo cuando el contador valorice.
+
+**`contable` y `fallback` NO son intercambiables.** En abril, el único mes
+valorizado, el costo contable (1.803.730.691) queda **15 % por debajo** del
+operativo del Gerencial (2.133.595.617). Sin explicación del contador, mezclar las
+dos fuentes en una serie inventa una discontinuidad.
+
+**Integridad: consultar `/api/pyg`, nunca `pyg_mensual` directo.** La vista agrupa
+lo que haya y **sí tiene filas de meses incompletos**, alimentadas sólo por
+spillover: llegó a mostrar julio con −1.689 M a partir de 958 líneas del día 1 más
+el fallback de costo. El endpoint sólo expone meses con **ventana mensual `ok`** en
+`pyg_ventana_control`; un mes sin ella responde `completo: false` y **sin cifras**.
+
+**Descuadres de partida doble conocidos** — se muestran, no se ocultan
+(`integridad.cuadraPartidaDoble`):
+
+| Mes | Diferencia | Qué se sabe |
+|---|---|---|
+| 2026-07 | **90.583** | Vive en los asientos del 1 de julio; el mismo importe aparecía en el spillover que trajo la ventana de junio |
+| 2026-05 | **−6** | Casi con seguridad redondeo del ERP |
+
+Junio y abril cuadran al peso con la misma lógica, así que no es un error de
+agregación. **Pendiente de explicación del contador.**
+
+**Crons** (`vercel.json`): `pyg_cuentas` diario, `pyg_dia` horario (últimos 7
+días), `pyg_cierres` cada 6 h. **`pyg_backfill` es TEMPORAL** — hace una ventana
+mensual por invocación y hay que retirarlo cuando termine; se reactiva añadiendo
+la entrada de vuelta para reingestar un mes concreto (`&mes=YYYY-MM`).
+
+**En local, `hgiGet` no sirve.** `hgiGetInternal` abre con `getConfig()`, que exige
+las cinco variables HGI —incluidas `HGI_USUARIO` y `HGI_CLAVE`, que viven sólo en
+Vercel— **sólo para leer `baseUrl`**, aunque el token esté cacheado y no haya nada
+que autenticar. Para probar desde local hay que inyectar un fetcher que lea el
+token vigente de `hgi_token` con un SELECT y haga el GET directo (ver
+`scripts/pyg-ingest-ventana.ts`). **Nunca llamar `/Api/Autenticar` a mano**: HGINet
+admite un solo token vigente por usuario y autenticar desde una máquina de
+desarrollo se lo arrebata a producción.
+
 ### Regla dura: nunca probar escrituras contra un dataset real
 
 **Cualquier prueba que escriba en `hgi_snapshot` va contra un dataset desechable
