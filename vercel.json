@@ -7,6 +7,13 @@
     { "path": "/api/hgi/refresh?dataset=cartera", "schedule": "13,43 * * * *" },
     { "path": "/api/hgi/refresh?dataset=ventas", "schedule": "7 * * * *" },
     { "path": "/api/hgi/refresh?dataset=recaudo", "schedule": "37 * * * *" },
-    { "path": "/api/hgi/refresh?dataset=ventas_mensual", "schedule": "22 * * * *" }
-  ]
+    { "path": "/api/hgi/refresh?dataset=ventas_mensual", "schedule": "22 * * * *" },
+    { "path": "/api/hgi/refresh?dataset=pyg_cuentas", "schedule": "9 8 * * *" },
+    { "path": "/api/hgi/refresh?dataset=pyg_backfill", "schedule": "4,14,24,34,44,54 * * * *" },
+    { "path": "/api/hgi/refresh?dataset=pyg_dia", "schedule": "47 * * * *" },
+    { "path": "/api/hgi/refresh?dataset=pyg_cierres", "schedule": "17 */6 * * *" }
+  ],
+  "functions": {
+    "app/api/hgi/refresh/route.ts": { "memory": 3009 }
+  }
 }
