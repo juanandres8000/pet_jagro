@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import GerenciaView from '@/components/GerenciaView';
+import PygView from '@/components/PygView';
 import PickingView from '@/components/PickingView';
 import InventarioView from '@/components/InventarioView';
 import CatalogoView from '@/components/CatalogoView';
@@ -11,7 +12,7 @@ import CarteraView from '@/components/CarteraView';
 import ComposicionView from '@/components/ComposicionView';
 import VendedoresView from '@/components/VendedoresView';
 
-type Tab = 'gerencia' | 'picking' | 'inventario' | 'catalogo' | 'clientes' | 'cartera' | 'composicion' | 'vendedores';
+type Tab = 'gerencia' | 'pyg' | 'picking' | 'inventario' | 'catalogo' | 'clientes' | 'cartera' | 'composicion' | 'vendedores';
 
 interface MenuItem {
   id: Tab;
@@ -30,7 +31,10 @@ interface MenuGroup {
 const MENU_GROUPS: MenuGroup[] = [
   {
     label: 'Dirección',
-    items: [{ id: 'gerencia', label: 'Gerencia' }],
+    items: [
+      { id: 'gerencia', label: 'Gerencia' },
+      { id: 'pyg', label: 'P&G' },
+    ],
   },
   // OPERACIÓN OCULTA — ver CLAUDE.md § "Operación oculta".
   // A diferencia de Facturación/Liquidaciones/Trazabilidad, aquí sólo se quita
@@ -67,9 +71,11 @@ const MENU_GROUPS: MenuGroup[] = [
   },
 ];
 
-export default function Home() {
-  // Gerencia es la home: es la lectura que abre el dashboard.
-  const [activeTab, setActiveTab] = useState<Tab>('gerencia');
+export default function AppShell({ initialTab = 'gerencia' }: { initialTab?: Tab }) {
+  // Gerencia es la home: es la lectura que abre el dashboard. `initialTab` deja
+  // que una ruta propia (app/pyg) monte este mismo shell con otra pestaña activa
+  // sin duplicar el sidebar.
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Búsqueda prefijada al saltar de Cartera → Clientes (link "Ver cliente").
   const [clientesSearch, setClientesSearch] = useState('');
@@ -178,6 +184,7 @@ export default function Home() {
         <div className="flex-1 px-4 py-8 sm:px-8 lg:px-12">
           <div className="mx-auto max-w-6xl">
             {activeTab === 'gerencia' && <GerenciaView />}
+            {activeTab === 'pyg' && <PygView />}
             {activeTab === 'picking' && <PickingView />}
             {activeTab === 'inventario' && <InventarioView />}
             {activeTab === 'catalogo' && <CatalogoView />}
