@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { PageHeader, SectionTitle, KpiCard, Card, Th, EmptyState, Badge } from '@/components/ui';
 import { formatPrice, kpiMoney } from '@/lib/format';
 
@@ -544,35 +544,36 @@ export default function PygView() {
                       tipo="subtotal"
                     />
 
+                    {/* Cada grupo va seguido INMEDIATAMENTE de sus subcuentas
+                        cuando está abierto. Renderizarlas en un bloque aparte
+                        las mandaba al final de la tabla, debajo del grupo 53. */}
                     {gastos.porGrupo.map((g) => (
-                      <FilaCascada
-                        key={g.grupo}
-                        etiqueta={`${g.grupo} · ${g.descripcion}`}
-                        valor={-g.saldo}
-                        base={ing.total}
-                        expandible={g.subcuentas.length > 0}
-                        abierto={!!abiertos[g.grupo]}
-                        onToggle={() => toggle(g.grupo)}
-                      />
+                      <Fragment key={g.grupo}>
+                        <FilaCascada
+                          etiqueta={`${g.grupo} · ${g.descripcion}`}
+                          valor={-g.saldo}
+                          base={ing.total}
+                          expandible={g.subcuentas.length > 0}
+                          abierto={!!abiertos[g.grupo]}
+                          onToggle={() => toggle(g.grupo)}
+                        />
+                        {abiertos[g.grupo] &&
+                          // Ya vienen ordenadas por saldo desc del endpoint; se
+                          // reordena igual para no depender del orden del JSON.
+                          [...g.subcuentas]
+                            .sort((a, b) => b.saldo - a.saldo)
+                            .map((s) => (
+                              <FilaCascada
+                                key={`${g.grupo}-${s.subcuenta}`}
+                                etiqueta={`${s.subcuenta} · ${s.descripcion}`}
+                                valor={-s.saldo}
+                                base={ing.total}
+                                tipo="sub"
+                                sangria={1}
+                              />
+                            ))}
+                      </Fragment>
                     ))}
-                    {gastos.porGrupo
-                      .filter((g) => abiertos[g.grupo])
-                      .flatMap((g) =>
-                        // Ya vienen ordenadas por saldo desc del endpoint; se
-                        // reordena igual para no depender del orden del JSON.
-                        [...g.subcuentas]
-                          .sort((a, b) => b.saldo - a.saldo)
-                          .map((s) => (
-                            <FilaCascada
-                              key={`${g.grupo}-${s.subcuenta}`}
-                              etiqueta={`${s.subcuenta} · ${s.descripcion}`}
-                              valor={-s.saldo}
-                              base={ing.total}
-                              tipo="sub"
-                              sangria={1}
-                            />
-                          )),
-                      )}
 
                     <FilaCascada etiqueta="Gastos totales" valor={-gastos.total} base={ing.total} tipo="subtotal" />
                     <FilaCascada
