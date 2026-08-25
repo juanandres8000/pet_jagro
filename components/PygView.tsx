@@ -137,63 +137,67 @@ function GraficoTendencia({ meses, alto = 200 }: { meses: MesListado[]; alto?: n
   if (!meses.length) return <EmptyState title="Sin meses completos todavía" />;
 
   const valores = meses.flatMap((m) => [m.ingresos.total, m.costo.valor, m.gastos.total, m.resultado]);
-  const max = Math.max(1, ...valores.map(Math.abs));
-  const hayNegativos = valores.some((v) => v < 0);
-  // Con negativos el cero va a media altura; sin ellos, al fondo.
-  const altoPos = hayNegativos ? alto / 2 : alto;
-  const altoNeg = alto - altoPos;
-  const escala = (v: number) => (Math.abs(v) / max) * altoPos;
+  // La escala reparte el alto entre la zona positiva y la negativa EN PROPORCIÓN
+  // a lo que cada una necesita. Un 50/50 fijo desperdiciaba media caja: el peor
+  // resultado (−101 M) es el 4% de los ingresos del mejor mes (2.340 M).
+  const maxPos = Math.max(0, ...valores.filter((v) => v > 0));
+  const maxNeg = Math.max(0, ...valores.filter((v) => v < 0).map(Math.abs));
+  const span = Math.max(1, maxPos + maxNeg);
+  const altoPos = Math.round((maxPos / span) * alto);
+  const escala = (v: number) => (Math.abs(v) / span) * alto;
 
   return (
     <div className="overflow-x-auto">
-      <div className="flex min-w-full items-stretch gap-3 px-4 pb-2 pt-6">
-        {meses.map((m) => {
-          const res = m.resultado;
-          return (
-            <div key={m.mes} className="flex flex-1 flex-col" style={{ minWidth: 64 }}>
-              <div className="relative flex flex-col" style={{ height: alto }}>
-                {/* Zona positiva */}
-                <div className="flex items-end justify-center gap-1" style={{ height: altoPos }}>
+      <div className="relative px-4 pb-2 pt-6">
+        {/* Línea de cero continua, no un segmento por columna. */}
+        <div
+          className="pointer-events-none absolute inset-x-4 border-t border-line-strong"
+          style={{ top: 24 + altoPos }}
+        />
+        <div className="flex min-w-full items-stretch gap-3">
+          {meses.map((m) => {
+            const res = m.resultado;
+            return (
+              <div key={m.mes} className="flex flex-1 flex-col" style={{ minWidth: 64 }}>
+                <div className="relative" style={{ height: alto }}>
+                  <div className="flex items-end justify-center gap-1" style={{ height: altoPos }}>
+                    <div
+                      className="w-full max-w-[16px] rounded-t bg-accent-light"
+                      style={{ height: Math.max(2, escala(m.ingresos.total)) }}
+                      title={`Ingresos ${formatPrice(m.ingresos.total)}`}
+                    />
+                    <div
+                      className="w-full max-w-[16px] rounded-t bg-accent"
+                      style={{ height: Math.max(2, escala(m.costo.valor)) }}
+                      title={`Costo ${formatPrice(m.costo.valor)}${m.costo.esFallback ? ' (estimado)' : ''}`}
+                    />
+                    <div
+                      className="w-full max-w-[16px] rounded-t bg-warn"
+                      style={{ height: Math.max(2, escala(m.gastos.total)) }}
+                      title={`Gastos ${formatPrice(m.gastos.total)}`}
+                    />
+                  </div>
+                  {/* Marcador de resultado, medido desde el cero. */}
                   <div
-                    className="w-full max-w-[16px] rounded-t bg-accent-light"
-                    style={{ height: Math.max(2, escala(m.ingresos.total)) }}
-                    title={`Ingresos ${formatPrice(m.ingresos.total)}`}
-                  />
-                  <div
-                    className="w-full max-w-[16px] rounded-t bg-accent"
-                    style={{ height: Math.max(2, escala(m.costo.valor)) }}
-                    title={`Costo ${formatPrice(m.costo.valor)}${m.costo.esFallback ? ' (estimado)' : ''}`}
-                  />
-                  <div
-                    className="w-full max-w-[16px] rounded-t bg-warn"
-                    style={{ height: Math.max(2, escala(m.gastos.total)) }}
-                    title={`Gastos ${formatPrice(m.gastos.total)}`}
-                  />
+                    className="pointer-events-none absolute inset-x-0 flex justify-center"
+                    style={{ top: res >= 0 ? altoPos - escala(res) - 3 : altoPos + escala(res) - 3 }}
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ring-2 ring-surface ${res >= 0 ? 'bg-ink' : 'bg-danger'}`}
+                      title={`Resultado ${formatPrice(res)}`}
+                    />
+                  </div>
                 </div>
-                {/* Línea de cero */}
-                <div className="w-full border-t border-line-strong" />
-                {/* Zona negativa */}
-                <div className="flex items-start justify-center" style={{ height: altoNeg }} />
-                {/* Marcador de resultado, posicionado respecto al cero */}
+                <div className="mt-1.5 text-center tabular text-[10px] text-ink-faint">{mesCorto(m.mes)}</div>
                 <div
-                  className="pointer-events-none absolute inset-x-0 flex justify-center"
-                  style={{ top: res >= 0 ? altoPos - escala(res) - 3 : altoPos + escala(res) - 3 }}
+                  className={`text-center tabular text-[10px] font-medium ${res >= 0 ? 'text-ink-muted' : 'text-danger'}`}
                 >
-                  <span
-                    className={`h-1.5 w-1.5 rounded-full ring-2 ring-surface ${res >= 0 ? 'bg-ink' : 'bg-danger'}`}
-                    title={`Resultado ${formatPrice(res)}`}
-                  />
+                  {Math.round(res / 1_000_000).toLocaleString('es-CO')} M
                 </div>
               </div>
-              <div className="mt-1.5 text-center tabular text-[10px] text-ink-faint">{mesCorto(m.mes)}</div>
-              <div
-                className={`text-center tabular text-[10px] font-medium ${res >= 0 ? 'text-ink-muted' : 'text-danger'}`}
-              >
-                {Math.round(res / 1_000_000).toLocaleString('es-CO')} M
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
       <div className="flex flex-wrap items-center gap-4 border-t border-line px-4 py-2 text-xs text-ink-muted">
         <span className="flex items-center gap-1.5">
