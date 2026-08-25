@@ -131,6 +131,28 @@ function pendientesBackfill(control: FilaControl[], hoy: string): number {
  * Es deliberadamente una sola: una ventana mensual midió 120s (fetch + aplanado
  * + 17 INSERT por lotes) con un pico de 550 MB. Dos en la misma invocación se
  * acercarían demasiado al maxDuration de 300s.
+ *
+ * ══ SU CRON YA SE RETIRÓ ══════════════════════════════════════════════════
+ *
+ * El backfill terminó el 2026-08-25: 2026-01 … 2026-07 quedaron en `ok` y la
+ * entrada `?dataset=pyg_backfill` salió de `vercel.json`. Corría cada 10 min y,
+ * agotado el trabajo, sólo gastaba una invocación por nada.
+ *
+ * La función NO se borra: sigue siendo el camino para reingestar un mes.
+ *
+ * Para reingestar UNO, a mano contra producción (no hace falta tocar el cron):
+ *   curl -H "Authorization: Bearer $CRON_SECRET" \
+ *     "https://pet-jagro.vercel.app/api/hgi/refresh?dataset=pyg_backfill&mes=2026-03"
+ * `mes` fuerza esa ventana mensual y se salta la elección por cursor. La
+ * sustitución de pygIngest es idempotente, así que reingestar un mes ya cargado
+ * es seguro: reasigna lote y borra lo que HGINet ya no devuelve.
+ *
+ * Para reactivar el barrido automático (p. ej. al ampliar el horizonte por
+ * debajo de PYG_MES_INICIO), devolver a `vercel.json`:
+ *   { "path": "/api/hgi/refresh?dataset=pyg_backfill", "schedule": "4,14,24,34,44,54 * * * *" }
+ * Esos minutos se eligieron libres a propósito: HGINet admite un solo token
+ * vigente por usuario y dos crons a la vez se lo disputan.
+ * ══════════════════════════════════════════════════════════════════════════
  */
 export async function refreshPygBackfill(mesForzado?: string): Promise<ResultadoRefresh> {
   const hoy = hoyColombia();
