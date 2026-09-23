@@ -22,8 +22,10 @@ export const maxDuration = 30;
  * P&G mensual, servido desde pyg_movimiento / pyg_cuenta vía las vistas
  * pyg_saldo_cuenta y pyg_mensual.
  *
- *   GET /api/pyg              → últimos 12 meses CON ventana mensual ok
- *   GET /api/pyg?mes=YYYY-MM  → un mes con el detalle de gastos por subcuenta
+ *   GET /api/pyg              → TODOS los meses con ventana mensual ok
+ *   GET /api/pyg?mes=YYYY-MM  → un mes con el detalle de gastos por subcuenta y
+ *                               `comparativo`: el mismo mes del año anterior,
+ *                               o null si ese mes no está completo
  *
  * ============ POR QUÉ EL BLOQUE `integridad` NO ES DECORATIVO ============
  *
@@ -96,6 +98,13 @@ function avisoCosto(mes: string, asiento: Awaited<ReturnType<typeof readAsientoC
   );
 }
 
+/**
+ * Utilidad operacional = ingreso operacional neto − costo − gastos operacionales
+ * (51 administración + 52 ventas). El resultado del ejercicio suma después el
+ * no operacional (42 − 53) y cualquier otro grupo de la clase 5.
+ */
+const utilidadOperacional = (m: PygMes) => m.ingOperacionalNeto - m.costo - m.gastoAdmon - m.gastoVentas;
+
 const bloqueGastos = (m: PygMes, porGrupo: GrupoGasto[]) => ({
   total: m.gastoTotal,
   admon: m.gastoAdmon,
@@ -128,6 +137,39 @@ export async function GET(req: Request) {
   }
 }
 
+/**
+ * Cifras completas de un mes, o null si no tiene ventana mensual ok o no tiene
+ * movimiento. Es la misma lectura para el mes pedido y para su comparativo, así
+ * que las dos columnas salen de exactamente las mismas reglas.
+ */
+async function cifrasMes(mes: string) {
+  if (!(await tieneVentanaMensualOk(mes))) return null;
+  const m = await readPygMes(mes);
+  if (!m) return null;
+  const diasCubiertos = await readDiasCubiertos(mes);
+  const porGrupo = await readGastosPorGrupo(mes);
+  const asiento = m.costoEsFallback ? await readAsientoCosto(mes) : null;
+  return {
+    mes: m.mes,
+    ingresos: bloqueIngresos(m),
+    costo: {
+      valor: m.costo,
+      esFallback: m.costoEsFallback,
+      fuente: m.costoEsFallback ? 'gerencial' : 'contable',
+      contable: m.costoContable,
+      ...(m.costoEsFallback ? { aviso: avisoCosto(mes, asiento) } : {}),
+    },
+    gastos: bloqueGastos(m, porGrupo),
+    utilidadBruta: m.utilidadBruta,
+    utilidadOperacional: utilidadOperacional(m),
+    resultado: m.resultado,
+    integridad: integridadDe(m, diasCubiertos),
+  };
+}
+
+/** El mismo mes del año anterior: '2026-05' → '2025-05'. */
+const mismoMesAnioAnterior = (mes: string) => `${Number(mes.slice(0, 4)) - 1}${mes.slice(4)}`;
+
 /** Un mes con detalle. Sin ventana mensual ok no devuelve cifras. */
 async function unMes(mes: string): Promise<NextResponse> {
   const mensualOk = await tieneVentanaMensualOk(mes);
@@ -152,32 +194,30 @@ async function unMes(mes: string): Promise<NextResponse> {
     });
   }
 
-  const diasCubiertos = await readDiasCubiertos(mes);
-  const porGrupo = await readGastosPorGrupo(mes);
-  const asiento = m.costoEsFallback ? await readAsientoCosto(mes) : null;
+  // En serie, no Promise.all (cliente max: 1, ver cabecera).
+  const actual = await cifrasMes(mes);
+  const mesAnt = mismoMesAnioAnterior(mes);
+  const comparativo = await cifrasMes(mesAnt);
 
   return NextResponse.json({
     ok: true,
-    mes: m.mes,
     completo: true,
-    ingresos: bloqueIngresos(m),
-    costo: {
-      valor: m.costo,
-      esFallback: m.costoEsFallback,
-      fuente: m.costoEsFallback ? 'gerencial' : 'contable',
-      contable: m.costoContable,
-      ...(m.costoEsFallback ? { aviso: avisoCosto(mes, asiento) } : {}),
-    },
-    gastos: bloqueGastos(m, porGrupo),
-    utilidadBruta: m.utilidadBruta,
-    resultado: m.resultado,
-    integridad: integridadDe(m, diasCubiertos),
+    ...actual,
+    // null = el mismo mes del año anterior no está completo: la vista muestra "—".
+    comparativo,
+    mesComparativo: mesAnt,
   });
 }
 
-/** Listado: sólo meses con ventana mensual ok, del más reciente al más viejo. */
+/**
+ * Tope del listado: en la práctica "todos". Con 2025 cargado hay 19 meses; el
+ * tope sólo existe porque readMesesMensualOk exige uno.
+ */
+const MAX_MESES_LISTADO = 240;
+
+/** Listado: TODOS los meses con ventana mensual ok, del más reciente al más viejo. */
 async function listado(): Promise<NextResponse> {
-  const meses = await readMesesMensualOk(12);
+  const meses = await readMesesMensualOk(MAX_MESES_LISTADO);
   if (meses.length === 0) {
     return NextResponse.json({
       ok: true,
@@ -204,6 +244,7 @@ async function listado(): Promise<NextResponse> {
       },
       gastos: { total: m.gastoTotal, admon: m.gastoAdmon, ventas: m.gastoVentas, noOperacional: m.gastoNoOperacional },
       utilidadBruta: m.utilidadBruta,
+      utilidadOperacional: utilidadOperacional(m),
       resultado: m.resultado,
       integridad: integridadDe(m, cubiertos.get(m.mes) ?? 0),
     })),

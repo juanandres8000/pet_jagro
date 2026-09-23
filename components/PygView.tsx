@@ -13,8 +13,8 @@ import { formatPrice, kpiMoney } from '@/lib/format';
  * excluido— viven en migrations/008_pyg_vistas.sql.
  *
  * Lo único que se deriva aquí son los porcentajes de presentación (márgenes y
- * peso de cada gasto sobre ingresos) y las variaciones mes a mes, que salen de
- * comparar dos meses del propio listado.
+ * peso de cada gasto sobre ingresos) y las variaciones contra el MISMO mes del
+ * año anterior, que llega resuelto en `comparativo` (null si no está completo).
  *
  * REGLA DURA: un mes que no está completo NO muestra cifras. El endpoint ya
  * filtra —sólo lista meses con ventana mensual ok— pero la vista vuelve a
@@ -38,18 +38,31 @@ const mesCorto = (mes: string) => {
   const [y, m] = mes.split('-');
   return `${MESES_CORTO[Number(m) - 1] ?? mes} ${y.slice(2)}`;
 };
+/** 'YYYY-MM' → "may 2025", para "vs may 2025". */
+const mesVs = (mes: string) => {
+  const [y, m] = mes.split('-');
+  return `${MESES_CORTO[Number(m) - 1] ?? mes} ${y}`;
+};
 
 const pctFmt = (v: number) => `${(v * 100).toFixed(1)}%`;
 /** Porcentaje sobre una base, tolerando base 0 (devuelve null, no Infinity). */
 const ratio = (parte: number, base: number): number | null => (base === 0 ? null : parte / base);
 const pctODash = (v: number | null) => (v === null ? '—' : pctFmt(v));
 
-/** Variación relativa contra el mes anterior. null si no hay con qué comparar. */
-function variacion(actual: number, anterior: number | undefined): string | undefined {
-  if (anterior === undefined || anterior === 0) return undefined;
-  const d = (actual - anterior) / Math.abs(anterior);
-  const signo = d >= 0 ? '+' : '';
-  return `${signo}${(d * 100).toFixed(1)}% vs mes anterior`;
+/** Variación relativa, o null si no hay base (sin comparativo o base 0). */
+const varRel = (actual: number, anterior: number | null | undefined): number | null =>
+  anterior === null || anterior === undefined || anterior === 0 ? null : (actual - anterior) / Math.abs(anterior);
+const conSigno = (v: number, decimales = 1) => `${v >= 0 ? '+' : ''}${v.toFixed(decimales)}`;
+const varFmt = (v: number | null) => (v === null ? '—' : `${conSigno(v * 100)}%`);
+
+/** Delta de una KPI contra el año anterior: "+12.3% vs may 2025", o "— vs may 2025". */
+function deltaVs(actual: number, anterior: number | null | undefined, vs: string): string {
+  return `${varFmt(varRel(actual, anterior))} vs ${vs}`;
+}
+/** Delta de un margen, en puntos porcentuales. */
+function deltaPp(actual: number | null, anterior: number | null, vs: string): string {
+  if (actual === null || anterior === null) return `— vs ${vs}`;
+  return `${conSigno((actual - anterior) * 100)} pp vs ${vs}`;
 }
 
 // ---- Tipos de la respuesta de /api/pyg ----
@@ -103,6 +116,18 @@ interface MesListado {
   costo: Costo;
   gastos: GastosResumen;
   utilidadBruta: number;
+  utilidadOperacional: number;
+  resultado: number;
+  integridad: Integridad;
+}
+/** Cifras completas de un mes: el pedido y, con la misma forma, su comparativo. */
+interface CifrasMes {
+  mes: string;
+  ingresos: Ingresos;
+  costo: Costo;
+  gastos: GastosResumen & { porGrupo: GrupoGasto[] };
+  utilidadBruta: number;
+  utilidadOperacional: number;
   resultado: number;
   integridad: Integridad;
 }
@@ -121,8 +146,12 @@ interface Detalle {
   costo?: Costo;
   gastos?: GastosResumen & { porGrupo: GrupoGasto[] };
   utilidadBruta?: number;
+  utilidadOperacional?: number;
   resultado?: number;
   integridad?: Integridad;
+  /** El mismo mes del año anterior; null si no está completo. */
+  comparativo?: CifrasMes | null;
+  mesComparativo?: string;
 }
 
 // ---- Gráfico de tendencia ----
@@ -228,6 +257,7 @@ function FilaCascada({
   etiqueta,
   valor,
   base,
+  valorAnt,
   tipo = 'normal',
   sangria = 0,
   extra,
@@ -238,6 +268,8 @@ function FilaCascada({
   etiqueta: string;
   valor: number;
   base: number;
+  /** Mismo concepto en el año anterior. null = sin comparativo o concepto ausente. */
+  valorAnt: number | null;
   tipo?: FilaTono;
   sangria?: number;
   extra?: React.ReactNode;
@@ -274,6 +306,10 @@ function FilaCascada({
       </td>
       <td className={`tabular whitespace-nowrap px-4 py-2.5 text-right ${clasesValor}`}>{formatPrice(valor)}</td>
       <td className="tabular whitespace-nowrap px-4 py-2.5 text-right text-ink-faint">{pctODash(pct)}</td>
+      <td className="tabular whitespace-nowrap border-l border-line px-4 py-2.5 text-right text-ink-muted">
+        {valorAnt === null ? <span className="text-ink-faint">—</span> : formatPrice(valorAnt)}
+      </td>
+      <td className="tabular whitespace-nowrap px-4 py-2.5 text-right text-ink-muted">{varFmt(varRel(valor, valorAnt))}</td>
     </>
   );
 
@@ -344,13 +380,16 @@ export default function PygView() {
   }, [mes]);
 
   const mesesDisponibles = listado?.meses ?? [];
-  // Mes anterior EN EL LISTADO, para las variaciones. Si el mes previo no está
-  // completo no aparece aquí y las KPI salen sin delta, que es lo correcto:
-  // comparar contra un mes a medio ingestar inventaría una variación.
-  const anterior = useMemo(() => {
-    const i = mesesDisponibles.findIndex((m) => m.mes === mes);
-    return i >= 0 ? mesesDisponibles[i + 1] : undefined;
-  }, [mesesDisponibles, mes]);
+  // Selector agrupado por año, del más reciente al más viejo (el listado ya
+  // viene en ese orden).
+  const porAnio = useMemo(() => {
+    const m = new Map<string, MesListado[]>();
+    for (const x of mesesDisponibles) {
+      const y = x.mes.slice(0, 4);
+      m.set(y, [...(m.get(y) ?? []), x]);
+    }
+    return [...m];
+  }, [mesesDisponibles]);
 
   // Tendencia: del más viejo al más nuevo para que el eje lea de izquierda a derecha.
   const tendencia = useMemo(() => [...mesesDisponibles].reverse(), [mesesDisponibles]);
@@ -367,7 +406,27 @@ export default function PygView() {
     ? ratio(detalle.utilidadBruta, ing.operacionalNeto)
     : null;
   const margenNeto = ing && detalle?.resultado !== undefined ? ratio(detalle.resultado, ing.total) : null;
-  const margenBrutoAnt = anterior ? ratio(anterior.utilidadBruta, anterior.ingresos.operacionalNeto) : null;
+
+  // Comparativo: el mismo mes del año anterior. null = no está completo, y
+  // entonces cada cifra muestra "—" en vez de inventar una variación.
+  const comp = detalle?.comparativo ?? null;
+  const vs = detalle?.mesComparativo ? mesVs(detalle.mesComparativo) : 'año anterior';
+  const margenBrutoAnt = comp ? ratio(comp.utilidadBruta, comp.ingresos.operacionalNeto) : null;
+  const margenNetoAnt = comp ? ratio(comp.resultado, comp.ingresos.total) : null;
+  // Mezclar costo contable y costo del Gerencial no es comparable (en abril-2026
+  // el contable quedó 15 % por debajo): se avisa cuando las fuentes difieren.
+  const costosMezclados = !!comp && !!costo && comp.costo.esFallback !== costo.esFallback;
+  const grupoAnt = (g: string) => comp?.gastos.porGrupo.find((x) => x.grupo === g) ?? null;
+  const subAnt = (g: string, sc: string) => grupoAnt(g)?.subcuentas.find((x) => x.subcuenta === sc) ?? null;
+  const gruposOperacionales = new Set(['51', '52']);
+  // Unión de grupos de los dos meses: un grupo que sólo tuvo movimiento el año
+  // anterior aparece con 0 este mes, para que la columna comparativa sume.
+  const grupos: GrupoGasto[] = [
+    ...(gastos?.porGrupo ?? []),
+    ...(comp?.gastos.porGrupo ?? [])
+      .filter((g) => !gastos?.porGrupo.some((x) => x.grupo === g.grupo))
+      .map((g) => ({ ...g, saldo: 0, subcuentas: [] })),
+  ].sort((a, b) => a.grupo.localeCompare(b.grupo));
 
   return (
     <div className="space-y-8">
@@ -389,10 +448,14 @@ export default function PygView() {
               className="rounded border border-line bg-surface px-3 py-1.5 text-sm text-ink"
               aria-label="Mes"
             >
-              {mesesDisponibles.map((m) => (
-                <option key={m.mes} value={m.mes}>
-                  {mesLargo(m.mes)}
-                </option>
+              {porAnio.map(([anio, meses]) => (
+                <optgroup key={anio} label={anio}>
+                  {meses.map((m) => (
+                    <option key={m.mes} value={m.mes}>
+                      {mesLargo(m.mes)}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           )
@@ -452,12 +515,12 @@ export default function PygView() {
             <KpiCard
               label="Ingresos totales"
               {...kpiMoney(ing.total)}
-              delta={variacion(ing.total, anterior?.ingresos.total)}
+              delta={deltaVs(ing.total, comp?.ingresos.total, vs)}
             />
             <KpiCard
               label="Costo de ventas"
               {...kpiMoney(costo.valor)}
-              delta={variacion(costo.valor, anterior?.costo.valor)}
+              delta={deltaVs(costo.valor, comp?.costo.valor, vs)}
               tone={costo.esFallback ? 'warn' : 'neutral'}
               hint={
                 costo.esFallback
@@ -468,33 +531,44 @@ export default function PygView() {
             <KpiCard
               label="Utilidad bruta"
               {...kpiMoney(detalle.utilidadBruta ?? 0)}
-              delta={variacion(detalle.utilidadBruta ?? 0, anterior?.utilidadBruta)}
+              delta={deltaVs(detalle.utilidadBruta ?? 0, comp?.utilidadBruta, vs)}
               tone={(detalle.utilidadBruta ?? 0) < 0 ? 'danger' : 'neutral'}
             />
             <KpiCard
               label="Margen bruto"
               value={pctODash(margenBruto)}
-              delta={
-                margenBruto !== null && margenBrutoAnt !== null
-                  ? `${margenBruto - margenBrutoAnt >= 0 ? '+' : ''}${((margenBruto - margenBrutoAnt) * 100).toFixed(1)} pp vs mes anterior`
-                  : undefined
-              }
+              delta={deltaPp(margenBruto, margenBrutoAnt, vs)}
               tone={margenBruto !== null && margenBruto < 0 ? 'danger' : 'neutral'}
               hint="Sobre ingresos operacionales netos"
             />
             <KpiCard
               label="Gastos totales"
               {...kpiMoney(gastos.total)}
-              delta={variacion(gastos.total, anterior?.gastos.total)}
+              delta={deltaVs(gastos.total, comp?.gastos.total, vs)}
             />
             <KpiCard
               label="Resultado"
               {...kpiMoney(detalle.resultado ?? 0)}
-              delta={variacion(detalle.resultado ?? 0, anterior?.resultado)}
+              delta={deltaVs(detalle.resultado ?? 0, comp?.resultado, vs)}
               tone={(detalle.resultado ?? 0) < 0 ? 'danger' : 'accent'}
-              hint={`Margen neto ${pctODash(margenNeto)} sobre ingresos totales`}
+              hint={`Margen neto ${pctODash(margenNeto)} sobre ingresos totales · ${deltaPp(margenNeto, margenNetoAnt, vs)}`}
             />
           </section>
+
+          {/* Comparativo: ausente, o con costos de fuentes distintas. */}
+          {!comp && detalle.mesComparativo && (
+            <p className="-mt-4 text-xs text-ink-faint">
+              Sin comparativo: {mesLargo(detalle.mesComparativo)} no está construido (no tiene su mes contable completo
+              cargado), así que las cifras del año anterior se muestran como —.
+            </p>
+          )}
+          {costosMezclados && comp && (
+            <p className="-mt-4 text-xs text-warn">
+              ⚠ El costo de {mesLargo(detalle.mes)} es {costo.esFallback ? 'estimado por facturación' : 'contable'} y el
+              de {mesLargo(comp.mes)} es {comp.costo.esFallback ? 'estimado por facturación' : 'contable'}: la variación
+              de costo, utilidades y márgenes mezcla dos fuentes y no es del todo comparable.
+            </p>
+          )}
 
           {/* Aviso del costo estimado */}
           {costo.esFallback && (
@@ -518,16 +592,26 @@ export default function PygView() {
                   <thead className="bg-surface-muted">
                     <tr>
                       <Th>Concepto</Th>
-                      <Th align="right">Valor</Th>
+                      <Th align="right">{mesVs(detalle.mes)}</Th>
                       <Th align="right">% ingresos</Th>
+                      <Th align="right" className="border-l border-line">
+                        {vs}
+                      </Th>
+                      <Th align="right">Var %</Th>
                     </tr>
                   </thead>
                   <tbody>
-                    <FilaCascada etiqueta="Ventas brutas" valor={ing.brutas} base={ing.total} />
+                    <FilaCascada
+                      etiqueta="Ventas brutas"
+                      valor={ing.brutas}
+                      base={ing.total}
+                      valorAnt={comp ? comp.ingresos.brutas : null}
+                    />
                     <FilaCascada
                       etiqueta="Devoluciones y descuentos"
                       valor={ing.devolucionesDescuentos}
                       base={ing.total}
+                      valorAnt={comp ? comp.ingresos.devolucionesDescuentos : null}
                       tipo="sub"
                       sangria={1}
                     />
@@ -535,59 +619,102 @@ export default function PygView() {
                       etiqueta="Ingreso operacional neto"
                       valor={ing.operacionalNeto}
                       base={ing.total}
+                      valorAnt={comp ? comp.ingresos.operacionalNeto : null}
                       tipo="subtotal"
                     />
-                    <FilaCascada etiqueta="Ingreso no operacional" valor={ing.noOperacional} base={ing.total} />
-                    <FilaCascada etiqueta="Ingresos totales" valor={ing.total} base={ing.total} tipo="subtotal" />
+                    <FilaCascada
+                      etiqueta="Ingreso no operacional"
+                      valor={ing.noOperacional}
+                      base={ing.total}
+                      valorAnt={comp ? comp.ingresos.noOperacional : null}
+                    />
+                    <FilaCascada
+                      etiqueta="Ingresos totales"
+                      valor={ing.total}
+                      base={ing.total}
+                      valorAnt={comp ? comp.ingresos.total : null}
+                      tipo="subtotal"
+                    />
                     <FilaCascada
                       etiqueta="Costo de ventas"
                       valor={-costo.valor}
                       base={ing.total}
-                      extra={costo.esFallback ? <Badge tone="warn">estimado</Badge> : undefined}
+                      valorAnt={comp ? -comp.costo.valor : null}
+                      extra={
+                        <>
+                          {costo.esFallback && <Badge tone="warn">estimado</Badge>}
+                          {comp?.costo.esFallback && <Badge tone="warn">{vs} estimado</Badge>}
+                        </>
+                      }
                     />
                     <FilaCascada
                       etiqueta="Utilidad bruta"
                       valor={detalle.utilidadBruta ?? 0}
                       base={ing.total}
+                      valorAnt={comp ? comp.utilidadBruta : null}
                       tipo="subtotal"
                     />
 
                     {/* Cada grupo va seguido INMEDIATAMENTE de sus subcuentas
                         cuando está abierto. Renderizarlas en un bloque aparte
                         las mandaba al final de la tabla, debajo del grupo 53. */}
-                    {gastos.porGrupo.map((g) => (
-                      <Fragment key={g.grupo}>
+                    {[
+                      ...grupos.filter((g) => gruposOperacionales.has(g.grupo)),
+                      null, // corte: utilidad operacional tras 51 y 52
+                      ...grupos.filter((g) => !gruposOperacionales.has(g.grupo)),
+                    ].map((g) =>
+                      g === null ? (
                         <FilaCascada
-                          etiqueta={`${g.grupo} · ${g.descripcion}`}
-                          valor={-g.saldo}
+                          key="__operacional__"
+                          etiqueta="Utilidad operacional"
+                          valor={detalle.utilidadOperacional ?? 0}
                           base={ing.total}
-                          expandible={g.subcuentas.length > 0}
-                          abierto={!!abiertos[g.grupo]}
-                          onToggle={() => toggle(g.grupo)}
+                          valorAnt={comp ? comp.utilidadOperacional : null}
+                          tipo="subtotal"
                         />
-                        {abiertos[g.grupo] &&
-                          // Ya vienen ordenadas por saldo desc del endpoint; se
-                          // reordena igual para no depender del orden del JSON.
-                          [...g.subcuentas]
-                            .sort((a, b) => b.saldo - a.saldo)
-                            .map((s) => (
-                              <FilaCascada
-                                key={`${g.grupo}-${s.subcuenta}`}
-                                etiqueta={`${s.subcuenta} · ${s.descripcion}`}
-                                valor={-s.saldo}
-                                base={ing.total}
-                                tipo="sub"
-                                sangria={1}
-                              />
-                            ))}
-                      </Fragment>
-                    ))}
+                      ) : (
+                        <Fragment key={g.grupo}>
+                          <FilaCascada
+                            etiqueta={`${g.grupo} · ${g.descripcion}`}
+                            valor={-g.saldo}
+                            base={ing.total}
+                            valorAnt={comp ? -(grupoAnt(g.grupo)?.saldo ?? 0) : null}
+                            expandible={g.subcuentas.length > 0}
+                            abierto={!!abiertos[g.grupo]}
+                            onToggle={() => toggle(g.grupo)}
+                          />
+                          {abiertos[g.grupo] &&
+                            // Ya vienen ordenadas por saldo desc del endpoint; se
+                            // reordena igual para no depender del orden del JSON.
+                            [...g.subcuentas]
+                              .sort((a, b) => b.saldo - a.saldo)
+                              .map((s) => (
+                                <FilaCascada
+                                  key={`${g.grupo}-${s.subcuenta}`}
+                                  etiqueta={`${s.subcuenta} · ${s.descripcion}`}
+                                  valor={-s.saldo}
+                                  base={ing.total}
+                                  valorAnt={comp ? -(subAnt(g.grupo, s.subcuenta)?.saldo ?? 0) : null}
+                                  tipo="sub"
+                                  sangria={1}
+                                />
+                              ))}
+                        </Fragment>
+                      ),
+                    )}
 
-                    <FilaCascada etiqueta="Gastos totales" valor={-gastos.total} base={ing.total} tipo="subtotal" />
+                    <FilaCascada
+                      etiqueta="Gastos totales"
+                      valor={-gastos.total}
+                      base={ing.total}
+                      valorAnt={comp ? -comp.gastos.total : null}
+                      tipo="subtotal"
+                    />
                     <FilaCascada
                       etiqueta="Resultado del ejercicio"
                       valor={detalle.resultado ?? 0}
                       base={ing.total}
+                      valorAnt={comp ? comp.resultado : null}
                       tipo="total"
                     />
                   </tbody>
@@ -596,7 +723,9 @@ export default function PygView() {
             </Card>
             {gastos.porGrupo.length > 0 && (
               <p className="text-xs text-ink-faint">
-                Los grupos de gasto se despliegan a subcuenta. Los porcentajes son sobre ingresos totales.
+                Los grupos de gasto se despliegan a subcuenta. Los porcentajes son sobre ingresos totales. La
+                columna {vs} es el mismo mes del año anterior; un grupo o subcuenta sin movimiento ese mes cuenta
+                como 0.
               </p>
             )}
           </section>
