@@ -41,23 +41,40 @@ export const maxDuration = 30;
  * Promise.all sobre él cuelga la ruta (CLAUDE.md § Trampas del pooler #2).
  */
 
+/**
+ * Por debajo de este descuadre (en pesos) la partida doble no se alerta: es
+ * redondeo del ERP (mayo-2026 descuadra en −6). `cuadraPartidaDoble` sigue
+ * siendo la igualdad exacta; el umbral sólo decide si la vista avisa.
+ */
+const UMBRAL_ALERTA_PARTIDA_DOBLE = 1_000;
+
 interface Integridad {
   diasEsperados: number;
   diasIngestados: number;
   completo: boolean;
+  /** Débitos = créditos exacto. */
   cuadraPartidaDoble: boolean;
   debitos: number;
   creditos: number;
+  /** Débitos − créditos. */
+  diferencia: number;
+  /** |diferencia| ≥ UMBRAL_ALERTA_PARTIDA_DOBLE: sólo entonces la vista avisa. */
+  alertaPartidaDoble: boolean;
 }
 
-const integridadDe = (m: PygMes, diasCubiertos: number): Integridad => ({
-  diasEsperados: diasDelMes(m.mes),
-  diasIngestados: diasCubiertos,
-  completo: diasCubiertos >= diasDelMes(m.mes),
-  cuadraPartidaDoble: m.cuadraPartidaDoble,
-  debitos: m.debitosMes,
-  creditos: m.creditosMes,
-});
+const integridadDe = (m: PygMes, diasCubiertos: number): Integridad => {
+  const diferencia = m.debitosMes - m.creditosMes;
+  return {
+    diasEsperados: diasDelMes(m.mes),
+    diasIngestados: diasCubiertos,
+    completo: diasCubiertos >= diasDelMes(m.mes),
+    cuadraPartidaDoble: m.cuadraPartidaDoble,
+    debitos: m.debitosMes,
+    creditos: m.creditosMes,
+    diferencia,
+    alertaPartidaDoble: Math.abs(diferencia) >= UMBRAL_ALERTA_PARTIDA_DOBLE,
+  };
+};
 
 const bloqueIngresos = (m: PygMes) => ({
   brutas: m.ventasBrutas,

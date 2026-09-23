@@ -73,6 +73,9 @@ interface Integridad {
   diasIngestados: number;
   completo: boolean;
   cuadraPartidaDoble: boolean;
+  diferencia: number;
+  /** El route la enciende sólo con |débitos − créditos| ≥ 1.000 (debajo es redondeo). */
+  alertaPartidaDoble: boolean;
   debitos: number;
   creditos: number;
 }
@@ -426,8 +429,9 @@ export default function PygView() {
 
       {completo && ing && costo && gastos && detalle && (
         <>
-          {/* Partida doble descuadrada: la contabilidad del mes no cierra. */}
-          {integridad && !integridad.cuadraPartidaDoble && (
+          {/* Partida doble descuadrada: la contabilidad del mes no cierra. El
+              umbral de redondeo lo decide el route (alertaPartidaDoble). */}
+          {integridad && integridad.alertaPartidaDoble && (
             <Card className="border-warn/30 bg-warn-soft">
               <div className="px-4 py-4">
                 <div className="font-medium text-warn">La partida doble de {mesLargo(detalle.mes)} no cuadra</div>
@@ -435,7 +439,7 @@ export default function PygView() {
                   Débitos <span className="tabular">{formatPrice(integridad.debitos)}</span> contra créditos{' '}
                   <span className="tabular">{formatPrice(integridad.creditos)}</span> — diferencia{' '}
                   <span className="tabular font-medium">
-                    {formatPrice(integridad.debitos - integridad.creditos)}
+                    {formatPrice(integridad.diferencia)}
                   </span>
                   . Las cifras de abajo salen igual del movimiento tal cual lo devuelve el ERP.
                 </p>
