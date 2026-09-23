@@ -1,6 +1,6 @@
 import { getValidToken } from './client';
 import { fetchRango, hoyColombia, trocear, type Rango } from './ventas';
-import { totales, agrupar, type VentaLinea } from './mappers/ventas';
+import { totales, agrupar, porZona, type VentaLinea } from './mappers/ventas';
 import { readCobertura, writeMes, type MesAgregado } from './ventasMensualStore';
 
 /**
@@ -123,6 +123,10 @@ export function agregarMes(mes: string, lineas: VentaLinea[], rango: Rango, parc
     topProductos: agrupar(lineas, (l) => l.codigoProducto, (l) => l.producto, 50),
     porLinea: agrupar(lineas, (l) => l.linea, (l) => l.linea),
     porVendedor: agrupar(lineas, (l) => l.vendedor, (l) => l.vendedor),
+    // Completos, sin límite, como línea y vendedor. Todos los rankings van en
+    // venta NETA: agrupar suma l.venta, que toVentaLinea ya descuenta (regla 3).
+    porProveedor: agrupar(lineas, (l) => l.nitProveedor ?? '', (l) => l.proveedor || '(sin proveedor)'),
+    porZona: porZona(lineas),
     hasta: rango.hasta,
     parcial,
   };

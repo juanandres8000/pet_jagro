@@ -81,7 +81,16 @@ export interface VentaLinea {
   vendedor: string;
   nitTercero: string;
   tercero: string;
+  /**
+   * NombreCiudadTercero. Es la "zona" de los rankings: NombreZonaTercero viene
+   * "GENERAL" en todas las líneas (las zonas no están configuradas en el ERP) y
+   * el maestro de terceros tampoco trae zona ni barrio. Medido en sep-2026: 56
+   * ciudades, 0 vacías, ningún NIT en más de una ciudad.
+   */
   ciudad: string;
+  /** NitProveedor del producto. Opcional: las líneas guardadas antes no lo traen. */
+  nitProveedor?: string;
+  proveedor?: string;
   bodega: string;
   cantidad: number;
   valorUnitario: number;
@@ -183,6 +192,8 @@ export function toVentaLinea(f: HgiVentaLinea): VentaLinea | null {
     nitTercero: str(f.NitTercero),
     tercero: str(f.NombreTercero) || str(f.NitTercero),
     ciudad: str(f.NombreCiudadTercero),
+    nitProveedor: str(f.NitProveedor),
+    proveedor: str(f.NombreProveedor) || str(f.NitProveedor),
     bodega: str(f.NombreBodega),
     cantidad,
     valorUnitario: num(f.ValorUnitario),
@@ -283,6 +294,48 @@ export function agrupar(
   }));
   out.sort((a, b) => b.venta - a.venta);
   return limite ? out.slice(0, limite) : out;
+}
+
+/** Cliente dentro de una zona. Venta neta (regla 3). */
+export interface ClienteDeZona {
+  nit: string;
+  nombre: string;
+  venta: number;
+  documentos: number;
+}
+
+/** Una zona (ciudad del cliente) con TODOS sus clientes, ordenados por venta. */
+export interface VentaPorZona {
+  zona: string;
+  venta: number;
+  documentos: number;
+  clientes: ClienteDeZona[];
+}
+
+/**
+ * Venta por zona con la lista COMPLETA de clientes, sin límite: el pareto de
+ * clientes por zona necesita la cola entera, no un top-N.
+ */
+export function porZona(ls: VentaLinea[]): VentaPorZona[] {
+  const zonas = new Map<string, { docs: Set<string>; clientes: Map<string, { nombre: string; venta: number; docs: Set<string> }> }>();
+  for (const l of ls) {
+    const zona = l.ciudad || '(sin ciudad)';
+    const z = zonas.get(zona) ?? { docs: new Set<string>(), clientes: new Map() };
+    z.docs.add(l.documento);
+    const c = z.clientes.get(l.nitTercero) ?? { nombre: l.tercero, venta: 0, docs: new Set<string>() };
+    c.venta += l.venta;
+    c.docs.add(l.documento);
+    z.clientes.set(l.nitTercero, c);
+    zonas.set(zona, z);
+  }
+  return [...zonas]
+    .map(([zona, z]) => {
+      const clientes = [...z.clientes]
+        .map(([nit, c]) => ({ nit, nombre: c.nombre, venta: c.venta, documentos: c.docs.size }))
+        .sort((a, b) => b.venta - a.venta);
+      return { zona, venta: clientes.reduce((s, c) => s + c.venta, 0), documentos: z.docs.size, clientes };
+    })
+    .sort((a, b) => b.venta - a.venta);
 }
 
 /** Serie diaria ordenada cronológicamente. */

@@ -1,5 +1,5 @@
 import { getSql as getDb } from '../pg';
-import type { VentaPorClave } from './mappers/ventas';
+import type { VentaPorClave, VentaPorZona } from './mappers/ventas';
 
 /**
  * Store de agregados mensuales de ventas (tabla hgi_ventas_mensual, una fila por
@@ -26,6 +26,12 @@ export interface MesAgregado {
   topProductos: VentaPorClave[];
   porLinea: VentaPorClave[];
   porVendedor: VentaPorClave[];
+  /**
+   * null en las filas construidas antes de la migración 009: esa dimensión no
+   * existe para ese mes hasta que se reconstruya. Nunca pintarlo como cero.
+   */
+  porProveedor: VentaPorClave[] | null;
+  porZona: VentaPorZona[] | null;
   hasta: string;
   parcial: boolean;
   builtAt: Date;
@@ -75,6 +81,8 @@ async function crearTabla(): Promise<void> {
       top_productos JSONB,
       por_linea     JSONB,
       por_vendedor  JSONB,
+      por_proveedor JSONB,
+      por_zona      JSONB,
       hasta         TEXT,
       parcial       BOOLEAN NOT NULL DEFAULT FALSE,
       built_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -97,6 +105,8 @@ interface Fila {
   top_productos: unknown;
   por_linea: unknown;
   por_vendedor: unknown;
+  por_proveedor: unknown;
+  por_zona: unknown;
   hasta: string | null;
   parcial: boolean;
   built_at: string | Date;
@@ -119,6 +129,8 @@ const toMes = (f: Fila): MesAgregado => ({
   topProductos: arr<VentaPorClave>(f.top_productos),
   porLinea: arr<VentaPorClave>(f.por_linea),
   porVendedor: arr<VentaPorClave>(f.por_vendedor),
+  porProveedor: Array.isArray(f.por_proveedor) ? (f.por_proveedor as VentaPorClave[]) : null,
+  porZona: Array.isArray(f.por_zona) ? (f.por_zona as VentaPorZona[]) : null,
   hasta: f.hasta ?? '',
   parcial: !!f.parcial,
   builtAt: new Date(f.built_at),
@@ -134,7 +146,7 @@ export async function writeMes(m: Omit<MesAgregado, 'builtAt'>): Promise<Date> {
     INSERT INTO hgi_ventas_mensual
       (mes, venta, costo, margen, iva, descuento, lineas, documentos,
        clientes_nits, pedidos_nums, top_clientes, top_productos, por_linea, por_vendedor,
-       hasta, parcial, built_at)
+       por_proveedor, por_zona, hasta, parcial, built_at)
     VALUES
       (${m.mes}, ${m.venta}, ${m.costo}, ${m.margen}, ${m.iva}, ${m.descuento},
        ${m.lineas}, ${m.documentos},
@@ -142,6 +154,7 @@ export async function writeMes(m: Omit<MesAgregado, 'builtAt'>): Promise<Date> {
        ${sql.json(m.topClientes as never)},
        ${sql.json(m.topProductos as never)}, ${sql.json(m.porLinea as never)},
        ${sql.json(m.porVendedor as never)},
+       ${sql.json(m.porProveedor as never)}, ${sql.json(m.porZona as never)},
        ${m.hasta}, ${m.parcial}, NOW())
     ON CONFLICT (mes) DO UPDATE
       SET venta = EXCLUDED.venta,
@@ -157,6 +170,8 @@ export async function writeMes(m: Omit<MesAgregado, 'builtAt'>): Promise<Date> {
           top_productos = EXCLUDED.top_productos,
           por_linea = EXCLUDED.por_linea,
           por_vendedor = EXCLUDED.por_vendedor,
+          por_proveedor = EXCLUDED.por_proveedor,
+          por_zona = EXCLUDED.por_zona,
           hasta = EXCLUDED.hasta,
           parcial = EXCLUDED.parcial,
           built_at = NOW()
