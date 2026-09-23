@@ -253,13 +253,16 @@ spillover: llegó a mostrar julio con −1.689 M a partir de 958 líneas del dí
 el fallback de costo. El endpoint sólo expone meses con **ventana mensual `ok`** en
 `pyg_ventana_control`; un mes sin ella responde `completo: false` y **sin cifras**.
 
-**Descuadres de partida doble conocidos** — se muestran, no se ocultan
-(`integridad.cuadraPartidaDoble`):
+**Descuadres de partida doble conocidos** — se muestran cuando
+|diferencia| ≥ 1.000; menores se silencian como redondeo. `/api/pyg` expone la
+igualdad exacta en `integridad.cuadraPartidaDoble`, la `diferencia` y
+`alertaPartidaDoble` (el umbral, `UMBRAL_ALERTA_PARTIDA_DOBLE` en el route), que
+es lo que decide si la vista avisa:
 
-| Mes | Diferencia | Qué se sabe |
-|---|---|---|
-| 2026-07 | **90.583** | Vive en los asientos del 1 de julio; el mismo importe aparecía en el spillover que trajo la ventana de junio |
-| 2026-05 | **−6** | Casi con seguridad redondeo del ERP |
+| Mes | Diferencia | Qué se sabe | ¿Avisa? |
+|---|---|---|---|
+| 2026-07 | **90.583** | Vive en los asientos del 1 de julio; el mismo importe aparecía en el spillover que trajo la ventana de junio | Sí |
+| 2026-05 | **−6** | Casi con seguridad redondeo del ERP | No (bajo el umbral) |
 
 Junio y abril cuadran al peso con la misma lógica, así que no es un error de
 agregación. **Pendiente de explicación del contador.**
