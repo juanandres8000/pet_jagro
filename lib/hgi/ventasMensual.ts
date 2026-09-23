@@ -101,7 +101,11 @@ export function agregarMes(mes: string, lineas: VentaLinea[], rango: Rango, parc
 
   return {
     mes,
-    venta: t.venta,
+    // La columna `venta` guarda la BRUTA y `descuento` va aparte: así las filas
+    // construidas antes y después de la regla 3 (mappers/ventas.ts) significan
+    // lo mismo, y /api/gerencia saca la neta como venta − descuento. Guardar
+    // aquí la neta restaría el descuento dos veces en las filas nuevas.
+    venta: t.ventaBruta,
     costo: t.costo,
     margen: t.margen,
     iva: t.iva,

@@ -20,6 +20,12 @@
  *    de 16.126 líneas y el total sale inflado ($287,6 M contra $277,2 M reales).
  *    Una nota crédito devuelve mercancía: su costo debe restar, no sumar.
  *
+ * 3) La venta NETA es ValorTotalDetalle − ValorDescuentoDetalle. `ValorTotalDetalle`
+ *    viene ANTES del descuento de línea. Con la resta, 2025 cuadra al peso con
+ *    el reporte del ERP (ene–sep 13.051.972.671 y ene–dic 17.755.191.458); sin
+ *    ella el año salía ~2 % inflado. En las notas crédito el descuento llega con
+ *    el mismo signo que la venta, así que la misma resta vale para ambas.
+ *
  * El IVA de línea se calcula como IvaUnitario × CantidadDocumento. `IvaUnitario`
  * es por unidad: sumarlo crudo no significa nada, y `IvaTotal` es de documento
  * (regla 1). Es la única lectura de IVA coherente a nivel de línea.
@@ -79,16 +85,24 @@ export interface VentaLinea {
   bodega: string;
   cantidad: number;
   valorUnitario: number;
-  venta: number; // ValorTotalDetalle
+  /**
+   * ValorTotalDetalle, antes del descuento de línea. Opcional porque las líneas
+   * guardadas antes de la regla 3 no lo traen: su `venta` es la bruta. Ver
+   * `aVentaNeta`.
+   */
+  ventaBruta?: number;
+  venta: number; // NETA: ValorTotalDetalle − ValorDescuentoDetalle (regla 3)
   costo: number; // CostoTotal con signo ya corregido (negativo en notas crédito)
-  margen: number; // venta − costo
+  margen: number; // venta neta − costo
   iva: number; // IvaUnitario × cantidad
   descuento: number;
   numeroPedido: string;
 }
 
 export interface VentaTotales {
-  venta: number;
+  venta: number; // neta
+  /** Antes del descuento. Es lo que se persiste en hgi_ventas_mensual.venta. */
+  ventaBruta: number;
   costo: number;
   margen: number;
   margenPct: number; // 0..1
@@ -149,7 +163,9 @@ export function toVentaLinea(f: HgiVentaLinea): VentaLinea | null {
   if (!fecha) return null;
 
   const nc = esNotaCredito(f.NombreTransaccion);
-  const venta = num(f.ValorTotalDetalle);
+  const ventaBruta = num(f.ValorTotalDetalle);
+  const descuento = num(f.ValorDescuentoDetalle);
+  const venta = ventaBruta - descuento; // regla 3
   // Regla 2: el costo de una nota crédito entra negativo.
   const costo = nc ? -num(f.CostoTotal) : num(f.CostoTotal);
   const cantidad = num(f.CantidadDocumento);
@@ -170,13 +186,26 @@ export function toVentaLinea(f: HgiVentaLinea): VentaLinea | null {
     bodega: str(f.NombreBodega),
     cantidad,
     valorUnitario: num(f.ValorUnitario),
+    ventaBruta,
     venta,
     costo,
     margen: venta - costo,
     iva: num(f.IvaUnitario) * cantidad,
-    descuento: num(f.ValorDescuentoDetalle),
+    descuento,
     numeroPedido: str(f.NumeroPedido),
   };
+}
+
+/**
+ * Lleva a neto una línea guardada antes de la regla 3 (sin `ventaBruta`, con la
+ * `venta` bruta). Las líneas nuevas pasan tal cual. Hace falta mientras el
+ * snapshot `ventas` vigente sea anterior al cambio: se reconstruye solo en el
+ * siguiente cron.
+ */
+export function aVentaNeta(l: VentaLinea): VentaLinea {
+  if (l.ventaBruta !== undefined) return l;
+  const venta = l.venta - l.descuento;
+  return { ...l, ventaBruta: l.venta, venta, margen: venta - l.costo };
 }
 
 /** Convierte el array crudo, descartando filas inservibles. */
@@ -196,19 +225,31 @@ const pct = (margen: number, venta: number) => (venta === 0 ? 0 : margen / venta
 /** Totales sobre un conjunto de líneas. Sólo campos de línea (regla 1). */
 export function totales(ls: VentaLinea[]): VentaTotales {
   let venta = 0;
+  let ventaBruta = 0;
   let costo = 0;
   let iva = 0;
   let descuento = 0;
   const docs = new Set<string>();
   for (const l of ls) {
     venta += l.venta;
+    ventaBruta += l.ventaBruta ?? l.venta + l.descuento;
     costo += l.costo;
     iva += l.iva;
     descuento += l.descuento;
     docs.add(l.documento);
   }
   const margen = venta - costo; // regla 2: recalculado, nunca MargenUtilidad
-  return { venta, costo, margen, margenPct: pct(margen, venta), iva, descuento, lineas: ls.length, documentos: docs.size };
+  return {
+    venta,
+    ventaBruta,
+    costo,
+    margen,
+    margenPct: pct(margen, venta),
+    iva,
+    descuento,
+    lineas: ls.length,
+    documentos: docs.size,
+  };
 }
 
 /**

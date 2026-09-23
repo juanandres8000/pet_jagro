@@ -3,7 +3,7 @@ import { readSnapshot } from '@/lib/hgi/snapshotStore';
 import { readAnio, readMes, type MesAgregado } from '@/lib/hgi/ventasMensualStore';
 import { hoyColombia } from '@/lib/hgi/ventas';
 import { mesDe, mesesDelHorizonte, desplazarMes } from '@/lib/hgi/ventasMensual';
-import { totales, agrupar, type VentaLinea, type VentaPorClave } from '@/lib/hgi/mappers/ventas';
+import { totales, agrupar, aVentaNeta, type VentaLinea, type VentaPorClave } from '@/lib/hgi/mappers/ventas';
 import type { CarteraResumen } from '@/lib/hgi/mappers/cartera';
 
 export const runtime = 'nodejs';
@@ -28,6 +28,21 @@ export const maxDuration = 30;
 const MESES_ANIO = 12;
 const PAGE_SIZE_DEFAULT = 25;
 const PAGE_SIZE_MAX = 100;
+
+/**
+ * NIT genérico de HGINet para la venta de mostrador sin cliente identificado
+ * ("VENTAS MOSTRADOR"). No es un cliente: no cuenta en "Clientes activos".
+ */
+const NIT_MOSTRADOR_GENERICO = '22222222';
+const esClienteReal = (nit: string) => !!nit && nit !== NIT_MOSTRADOR_GENERICO;
+
+/**
+ * Venta NETA de una fila mensual. La columna `venta` de hgi_ventas_mensual es la
+ * bruta (ValorTotalDetalle) y el descuento de línea va aparte: la neta es la
+ * resta. Con ella 2025 cuadra al peso con el ERP. Ver regla 3 en
+ * lib/hgi/mappers/ventas.ts.
+ */
+const ventaNeta = (m: MesAgregado) => m.venta - m.descuento;
 
 interface Kpis {
   venta: number;
@@ -111,13 +126,13 @@ function kpisDeMeses(meses: MesAgregado[]): Kpis {
   const nits = new Set<string>();
   const pedidos = new Set<string>();
   for (const m of meses) {
-    venta += m.venta;
+    venta += ventaNeta(m);
     costo += m.costo;
     documentos += m.documentos;
     lineas += m.lineas;
     // Unión, no suma: el cliente que compra todos los meses cuenta UNA vez, y un
     // pedido facturado en dos meses (entrega parcial) tampoco se duplica.
-    for (const n of m.clientesNits) nits.add(n);
+    for (const n of m.clientesNits) if (esClienteReal(n)) nits.add(n);
     for (const p of m.pedidosNums) pedidos.add(p);
   }
   const margen = venta - costo;
@@ -136,8 +151,18 @@ function kpisDeMeses(meses: MesAgregado[]): Kpis {
 
 // ---- Vista AÑO ----
 
-async function vistaAnio(anio: string) {
+/** Número de mes (1..12) de un 'YYYY-MM'. */
+const numMes = (mes: string) => Number(mes.slice(5, 7));
+
+async function vistaAnio(anio: string, hoy: string) {
   const avisos: string[] = [];
+  // Hasta qué mes se compara. En el año en curso, el mes actual; en un año
+  // pasado, diciembre. El año anterior se recorta a los MISMOS meses (mes
+  // cerrado, sin corte al día): comparar ene–sep contra ene–dic daba una caída
+  // que no existía.
+  const mesTope = anio === hoy.slice(0, 4) ? numMes(hoy) : MESES_ANIO;
+  const anioAnt = String(Number(anio) - 1);
+  const pad = (n: number) => String(n).padStart(2, '0');
 
   // SECUENCIAL a propósito, no Promise.all.
   // El cliente de postgres.js es uno por lambda con max: 1 (ver lib/pg.ts) y va
@@ -147,7 +172,7 @@ async function vistaAnio(anio: string) {
   // timeout. Son tres queries rápidas sobre índice; encadenarlas no cuesta nada.
   // El resto del código (readThrough, /api/clientes) ya consulta en serie.
   const meses = await readAnio(anio);
-  const mesesAnt = await readAnio(String(Number(anio) - 1));
+  const mesesAnt = (await readAnio(anioAnt)).filter((m) => numMes(m.mes) <= mesTope);
   const cartera = await carteraResumen();
 
   const kpis = kpisDeMeses(meses);
@@ -157,8 +182,18 @@ async function vistaAnio(anio: string) {
   const serie = Array.from({ length: MESES_ANIO }, (_, i) => {
     const mes = `${anio}-${String(i + 1).padStart(2, '0')}`;
     const m = meses.find((x) => x.mes === mes);
+    // El margen se recalcula sobre la neta: `m.margen` de las filas viejas se
+    // guardó sobre la bruta.
     return m
-      ? { mes, venta: m.venta, costo: m.costo, margen: m.margen, documentos: m.documentos, parcial: m.parcial, sinDatos: false }
+      ? {
+          mes,
+          venta: ventaNeta(m),
+          costo: m.costo,
+          margen: ventaNeta(m) - m.costo,
+          documentos: m.documentos,
+          parcial: m.parcial,
+          sinDatos: false,
+        }
       : { mes, venta: 0, costo: 0, margen: 0, documentos: 0, parcial: false, sinDatos: true };
   });
 
@@ -166,7 +201,7 @@ async function vistaAnio(anio: string) {
   const kpisAnt = comparable ? kpisDeMeses(mesesAnt) : null;
   if (!comparable) {
     avisos.push(
-      `Sin comparativo interanual: no hay ningún mes de ${Number(anio) - 1} construido todavía. ` +
+      `Sin comparativo interanual: no hay ningún mes de ${anioAnt} construido todavía. ` +
         'El backfill rellena un mes por hora.',
     );
   }
@@ -181,7 +216,16 @@ async function vistaAnio(anio: string) {
     anio,
     kpis,
     serie,
-    anioAnterior: kpisAnt ? { anio: String(Number(anio) - 1), kpis: kpisAnt, mesesConDatos: mesesAnt.length } : null,
+    rango: { desde: `${anio}-01`, hasta: `${anio}-${pad(mesTope)}` },
+    anioAnterior: kpisAnt
+      ? {
+          anio: anioAnt,
+          kpis: kpisAnt,
+          mesesConDatos: mesesAnt.length,
+          mesesEsperados: mesTope,
+          rango: { desde: `${anioAnt}-01`, hasta: `${anioAnt}-${pad(mesTope)}` },
+        }
+      : null,
     variacion: kpisAnt
       ? {
           venta: variacion(kpis.venta, kpisAnt.venta),
@@ -352,11 +396,12 @@ async function vistaMes(mes: string, f: Filtros, page: number, pageSize: number)
   }
 
   // El snapshot de ventas es del mes corriente; se acota por si acaso.
-  const delMes = snap.data.filter((l) => mesDe(l.fecha) === mes);
+  // aVentaNeta: un snapshot construido antes de la regla 3 trae la venta bruta.
+  const delMes = snap.data.filter((l) => mesDe(l.fecha) === mes).map(aVentaNeta);
   const filtradas = delMes.filter((l) => aplicaFiltros(l, f));
 
   const t = totales(filtradas);
-  const nits = new Set(filtradas.map((l) => l.nitTercero).filter(Boolean));
+  const nits = new Set(filtradas.map((l) => l.nitTercero).filter(esClienteReal));
   // "0" es el placeholder de HGINet para venta sin pedido previo (mostrador).
   const pedidos = new Set(filtradas.map((l) => l.numeroPedido).filter((n) => n && n !== '0'));
   const kpis: Kpis = {
@@ -380,10 +425,21 @@ async function vistaMes(mes: string, f: Filtros, page: number, pageSize: number)
   let variacionMes: { venta: number | null; margen: number | null; margenPctPuntos: number | null } | null = null;
   if (sinFiltros) {
     const prev = await readMes(desplazarMes(mes, -1));
-    const alt = snap.sourceCounts?.mesAnterior as { venta?: number; margen?: number; margenPct?: number } | undefined;
-    const ventaAnt = prev ? prev.venta : alt?.venta;
-    const margenAnt = prev ? prev.margen : alt?.margen;
-    const margenPctAnt = prev ? pct(prev.margen, prev.venta) : alt?.margenPct;
+    const alt = snap.sourceCounts?.mesAnterior as
+      | { venta?: number; ventaBruta?: number; descuento?: number; costo?: number; margen?: number; margenPct?: number }
+      | undefined;
+    // Un resumen sin ventaBruta es anterior a la regla 3: su venta es bruta.
+    const altNeta =
+      alt && typeof alt.venta === 'number' && alt.ventaBruta === undefined ? alt.venta - (alt.descuento ?? 0) : alt?.venta;
+    const altMargen =
+      alt && typeof altNeta === 'number' && typeof alt.costo === 'number' ? altNeta - alt.costo : alt?.margen;
+    const ventaAnt = prev ? ventaNeta(prev) : altNeta;
+    const margenAnt = prev ? ventaNeta(prev) - prev.costo : altMargen;
+    const margenPctAnt = prev
+      ? pct(ventaNeta(prev) - prev.costo, ventaNeta(prev))
+      : typeof altNeta === 'number' && typeof altMargen === 'number'
+        ? pct(altMargen, altNeta)
+        : alt?.margenPct;
     if (typeof ventaAnt === 'number' && ventaAnt !== 0) {
       variacionMes = {
         venta: variacion(kpis.venta, ventaAnt),
@@ -437,7 +493,7 @@ export async function GET(req: Request) {
 
     if (vista === 'anio') {
       const anio = /^\d{4}$/.test(sp.get('anio') ?? '') ? sp.get('anio')! : hoy.slice(0, 4);
-      return NextResponse.json({ ...(await vistaAnio(anio)), mesesDisponibles: mesesDelHorizonte(hoy) });
+      return NextResponse.json({ ...(await vistaAnio(anio, hoy)), mesesDisponibles: mesesDelHorizonte(hoy) });
     }
 
     const mes = /^\d{4}-\d{2}$/.test(sp.get('mes') ?? '') ? sp.get('mes')! : mesDe(hoy);

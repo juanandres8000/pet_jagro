@@ -29,6 +29,18 @@ const mesLargo = (mes: string) => {
   return `${MESES_LARGO[Number(m) - 1] ?? mes} ${y}`;
 };
 
+/** 'YYYY-MM' → "sep 2026". */
+const mesCorto = (mes: string) => {
+  const [y, m] = mes.split('-');
+  return `${MESES_CORTO[Number(m) - 1] ?? mes} ${y}`;
+};
+
+/** Rango de meses del mismo año → "ene–sep 2026" (o "ene 2026" si es uno solo). */
+const rangoCorto = (r: Rango) => {
+  if (r.desde === r.hasta) return mesCorto(r.desde);
+  return `${MESES_CORTO[Number(r.desde.slice(5, 7)) - 1]}–${mesCorto(r.hasta)}`;
+};
+
 /** Desplaza un 'YYYY-MM' en n meses. */
 function desplazarMes(mes: string, n: number): string {
   const [y, m] = mes.split('-').map(Number);
@@ -83,6 +95,12 @@ interface DocFila {
   margenPct: number;
 }
 
+/** Rango de meses 'YYYY-MM', inclusive en ambos extremos. */
+interface Rango {
+  desde: string;
+  hasta: string;
+}
+
 interface CarteraKpis {
   totalAbierto: number;
   totalVencido: number;
@@ -104,7 +122,10 @@ interface Respuesta {
   // año
   anio?: string;
   serie?: PuntoMes[];
-  anioAnterior?: { anio: string; kpis: Kpis; mesesConDatos: number } | null;
+  /** Meses que cubren los KPIs del año: ene → mes en curso, o ene–dic si es pasado. */
+  rango?: Rango;
+  /** Mismos meses del año anterior (mes cerrado, sin corte al día). */
+  anioAnterior?: { anio: string; kpis: Kpis; mesesConDatos: number; mesesEsperados: number; rango: Rango } | null;
   variacion?: { venta: number | null; margen: number | null; margenPctPuntos: number | null } | null;
   mesesConDatos?: number;
   // mes
@@ -252,12 +273,17 @@ function BloqueKpis({
   base,
   variacion,
   etiquetaVenta,
+  mostrarDocumentos,
+  hintClientes,
 }: {
   k: Kpis | undefined;
   cartera: CarteraKpis | null | undefined;
   base: string;
   variacion: Respuesta['variacion'];
   etiquetaVenta: string;
+  /** La vista año no la muestra; `k.documentos` se sigue calculando (ticket). */
+  mostrarDocumentos: boolean;
+  hintClientes: string;
 }) {
   const dVenta = delta(variacion?.venta, '%', base);
   const pts = variacion?.margenPctPuntos;
@@ -278,7 +304,9 @@ function BloqueKpis({
           }
           hint={k ? `${formatPrice(k.margen)} sobre ${formatPrice(k.costo)} de costo` : undefined}
         />
-        <KpiCard label="Documentos" value={k ? miles(k.documentos) : '—'} hint={k ? `${miles(k.lineas)} líneas` : undefined} />
+        {mostrarDocumentos && (
+          <KpiCard label="Documentos" value={k ? miles(k.documentos) : '—'} hint={k ? `${miles(k.lineas)} líneas` : undefined} />
+        )}
         <KpiCard
           label="Pedidos"
           value={k ? miles(k.pedidos) : '—'}
@@ -288,7 +316,7 @@ function BloqueKpis({
         <KpiCard
           label="Clientes activos"
           value={k ? miles(k.clientesActivos) : '—'}
-          hint="Con al menos un documento en el periodo"
+          hint={hintClientes}
         />
         <KpiCard
           label="Cartera abierta"
@@ -569,9 +597,21 @@ export default function GerenciaView() {
       <BloqueKpis
         k={k}
         cartera={d?.cartera}
-        base={vista === 'anio' ? 'año anterior' : 'mes anterior'}
+        base={
+          vista === 'anio'
+            ? d?.anioAnterior
+              ? rangoCorto(d.anioAnterior.rango)
+              : 'año anterior'
+            : 'mes anterior'
+        }
         variacion={d?.variacion}
         etiquetaVenta={vista === 'anio' ? 'Venta neta del año' : 'Venta neta del mes'}
+        mostrarDocumentos={vista === 'mes'}
+        hintClientes={
+          vista === 'anio'
+            ? `NITs con al menos un documento, ${d?.rango ? rangoCorto(d.rango) : anio}`
+            : `NITs con al menos un documento en ${mesCorto(d?.mes ?? mes)}`
+        }
       />
 
       {/* Gráfico principal */}
@@ -596,13 +636,13 @@ export default function GerenciaView() {
         <section className="space-y-3">
           <SectionTitle>Comparativo con {d.anioAnterior.anio}</SectionTitle>
           <Card>
-            <div className="grid grid-cols-1 gap-4 p-6 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 p-6 sm:grid-cols-2">
               <div>
                 <div className="text-xs font-medium uppercase tracking-wider text-ink-muted">Venta {d.anioAnterior.anio}</div>
                 <div className="tabular mt-2 font-serif text-2xl font-semibold text-ink" title={formatPrice(d.anioAnterior.kpis.venta)}>
                   {kpiMoney(d.anioAnterior.kpis.venta).value}
                 </div>
-                <div className="mt-1 text-xs text-ink-faint">{d.anioAnterior.mesesConDatos} meses construidos</div>
+                <div className="mt-1 text-xs text-ink-faint">{rangoCorto(d.anioAnterior.rango)}</div>
               </div>
               <div>
                 <div className="text-xs font-medium uppercase tracking-wider text-ink-muted">Margen {d.anioAnterior.anio}</div>
@@ -610,23 +650,14 @@ export default function GerenciaView() {
                   {pctFmt(d.anioAnterior.kpis.margenPct)}
                 </div>
                 <div className="mt-1 text-xs text-ink-faint" title={formatPrice(d.anioAnterior.kpis.margen)}>
-                  {kpiMoney(d.anioAnterior.kpis.margen).value}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs font-medium uppercase tracking-wider text-ink-muted">Documentos {d.anioAnterior.anio}</div>
-                <div className="tabular mt-2 font-serif text-2xl font-semibold text-ink">
-                  {miles(d.anioAnterior.kpis.documentos)}
-                </div>
-                <div className="mt-1 text-xs text-ink-faint">
-                  ticket {formatPrice(d.anioAnterior.kpis.ticketPromedio)}
+                  {kpiMoney(d.anioAnterior.kpis.margen).value} · {rangoCorto(d.anioAnterior.rango)}
                 </div>
               </div>
             </div>
-            {d.anioAnterior.mesesConDatos < 12 && (
+            {d.anioAnterior.mesesConDatos < d.anioAnterior.mesesEsperados && (
               <p className="border-t border-line px-6 py-3 text-xs text-warn">
-                ⚠ {d.anioAnterior.anio} tiene {d.anioAnterior.mesesConDatos} de 12 meses construidos: la comparación no es
-                de años completos.
+                ⚠ {rangoCorto(d.anioAnterior.rango)} tiene {d.anioAnterior.mesesConDatos} de{' '}
+                {d.anioAnterior.mesesEsperados} meses construidos: la comparación no es de periodos completos.
               </p>
             )}
           </Card>
