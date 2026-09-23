@@ -66,9 +66,25 @@ function meses(): string[] {
  * solo token vigente por usuario el viejo deja de servir.
  */
 let jwt: { valor: string; leido: number } | null = null;
+/**
+ * Lectura en vuelo, compartida. fetchRango corre 2 ventanas en paralelo y las
+ * dos piden token a la vez: dos SELECT simultáneos sobre el cliente max: 1 del
+ * pooler en transaction mode cuelgan la conexión sin error (trampa 2 del pooler
+ * en CLAUDE.md). Memoizando la PROMESA sale una sola query.
+ */
+let lectura: Promise<string> | null = null;
 
-async function tokenVigente(): Promise<string> {
-  if (jwt && Date.now() - jwt.leido < 60_000) return jwt.valor;
+function tokenVigente(): Promise<string> {
+  if (jwt && Date.now() - jwt.leido < 60_000) return Promise.resolve(jwt.valor);
+  if (!lectura) {
+    lectura = leerToken().finally(() => {
+      lectura = null;
+    });
+  }
+  return lectura;
+}
+
+async function leerToken(): Promise<string> {
   const rows = (await getSql()`SELECT jwt, expires_at FROM hgi_token WHERE id = 1`) as unknown as Array<{
     jwt: string | null;
     expires_at: string | Date | null;
