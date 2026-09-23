@@ -21,6 +21,8 @@ const MESES_LARGO = [
 ];
 
 const pctFmt = (v: number) => `${(v * 100).toFixed(1)}%`;
+/** Margen sobre las barras: "15,2%", con coma decimal. */
+const pctCorto = (v: number) => `${(v * 100).toFixed(1).replace('.', ',')}%`;
 const miles = (n: number) => n.toLocaleString('es-CO');
 
 /** 'YYYY-MM' → "julio 2026". */
@@ -67,6 +69,8 @@ interface PuntoMes {
   venta: number;
   costo: number;
   margen: number;
+  /** margen / venta neta; null en meses sin construir. */
+  margenPct: number | null;
   documentos: number;
   parcial: boolean;
   sinDatos: boolean;
@@ -161,19 +165,23 @@ function delta(v: number | null | undefined, sufijo: string, base: string): { te
 function GraficoBarras({
   puntos,
   alto = 200,
+  mostrarPct = false,
 }: {
   puntos: Array<{ clave: string; etiqueta: string; venta: number; costo: number; margen: number; documentos: number; sinDatos?: boolean; parcial?: boolean }>;
   alto?: number;
+  /** % de margen encima de cada barra construida. Sólo en la serie mensual. */
+  mostrarPct?: boolean;
 }) {
   if (!puntos.length) return <EmptyState title="Sin datos en el periodo" />;
   const max = Math.max(1, ...puntos.map((p) => Math.abs(p.venta)));
 
   return (
     <div className="overflow-x-auto">
-      <div className="flex min-w-full items-end gap-1.5 px-4 pb-2 pt-6" style={{ height: alto + 50 }}>
+      <div className="flex min-w-full items-end gap-1.5 px-4 pb-2 pt-6" style={{ height: alto + (mostrarPct ? 66 : 50) }}>
         {puntos.map((p) => {
           const hVenta = (Math.abs(p.venta) / max) * alto;
           const hCosto = (Math.abs(p.costo) / max) * alto;
+          const margenPct = p.venta === 0 ? 0 : p.margen / p.venta;
           return (
             <div key={p.clave} className="group flex flex-1 flex-col items-center justify-end" style={{ minWidth: 18 }}>
               {p.sinDatos ? (
@@ -183,17 +191,22 @@ function GraficoBarras({
                   title={`${p.etiqueta} · sin construir`}
                 />
               ) : (
-                <div
-                  className="relative flex w-full max-w-[34px] flex-col justify-end rounded-t"
-                  style={{ height: Math.max(2, hVenta) }}
-                  title={`${p.etiqueta} · venta ${formatPrice(p.venta)} · costo ${formatPrice(p.costo)} · margen ${formatPrice(p.margen)} · ${miles(p.documentos)} doc.${p.parcial ? ' · mes en curso (parcial)' : ''}`}
-                >
+                <>
+                  {mostrarPct && (
+                    <div className="mb-1 tabular text-[10px] text-ink-muted">{pctCorto(margenPct)}</div>
+                  )}
                   <div
-                    className={`w-full rounded-t ${p.parcial ? 'bg-accent-light opacity-70' : 'bg-accent-light'}`}
-                    style={{ height: Math.max(0, hVenta - hCosto) }}
-                  />
-                  <div className={`w-full ${p.parcial ? 'bg-accent opacity-70' : 'bg-accent'}`} style={{ height: hCosto }} />
-                </div>
+                    className="relative flex w-full max-w-[34px] flex-col justify-end rounded-t"
+                    style={{ height: Math.max(2, hVenta) }}
+                    title={`${p.etiqueta} · venta ${formatPrice(p.venta)} · costo ${formatPrice(p.costo)} · margen ${formatPrice(p.margen)} (${pctCorto(margenPct)}) · ${miles(p.documentos)} doc.${p.parcial ? ' · mes en curso (parcial)' : ''}`}
+                  >
+                    <div
+                      className={`w-full rounded-t ${p.parcial ? 'bg-accent-light opacity-70' : 'bg-accent-light'}`}
+                      style={{ height: Math.max(0, hVenta - hCosto) }}
+                    />
+                    <div className={`w-full ${p.parcial ? 'bg-accent opacity-70' : 'bg-accent'}`} style={{ height: hCosto }} />
+                  </div>
+                </>
               )}
               <div className="mt-1.5 tabular text-[10px] text-ink-faint">{p.etiqueta}</div>
             </div>
@@ -619,7 +632,7 @@ export default function GerenciaView() {
         <SectionTitle>{vista === 'anio' ? 'Venta y costo por mes' : 'Venta y costo por día'}</SectionTitle>
         <Card>
           {vista === 'anio' ? (
-            <GraficoBarras puntos={puntosAnio} />
+            <GraficoBarras puntos={puntosAnio} mostrarPct />
           ) : detalle ? (
             <GraficoBarras puntos={puntosMes} />
           ) : (

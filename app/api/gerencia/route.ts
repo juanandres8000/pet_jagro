@@ -190,11 +190,12 @@ async function vistaAnio(anio: string, hoy: string) {
           venta: ventaNeta(m),
           costo: m.costo,
           margen: ventaNeta(m) - m.costo,
+          margenPct: pct(ventaNeta(m) - m.costo, ventaNeta(m)),
           documentos: m.documentos,
           parcial: m.parcial,
           sinDatos: false,
         }
-      : { mes, venta: 0, costo: 0, margen: 0, documentos: 0, parcial: false, sinDatos: true };
+      : { mes, venta: 0, costo: 0, margen: 0, margenPct: null, documentos: 0, parcial: false, sinDatos: true };
   });
 
   const comparable = mesesAnt.length > 0;
