@@ -3,7 +3,15 @@ import { readSnapshot } from '@/lib/hgi/snapshotStore';
 import { readAnio, readMes, type MesAgregado } from '@/lib/hgi/ventasMensualStore';
 import { hoyColombia } from '@/lib/hgi/ventas';
 import { mesDe, mesesDelHorizonte, desplazarMes } from '@/lib/hgi/ventasMensual';
-import { totales, agrupar, aVentaNeta, type VentaLinea, type VentaPorClave } from '@/lib/hgi/mappers/ventas';
+import {
+  totales,
+  agrupar,
+  aVentaNeta,
+  porZona,
+  type VentaLinea,
+  type VentaPorClave,
+  type VentaPorZona,
+} from '@/lib/hgi/mappers/ventas';
 import type { CarteraResumen } from '@/lib/hgi/mappers/cartera';
 
 export const runtime = 'nodejs';
@@ -117,6 +125,165 @@ function unirRankings(partes: VentaPorClave[][], limite: number): VentaPorClave[
     .slice(0, limite);
 }
 
+// ---- Proveedores y zonas ----
+
+const TOP_PROVEEDORES = 15;
+
+interface OtrosProveedores {
+  n: number;
+  venta: number;
+  costo: number;
+  margen: number;
+  margenPct: number;
+}
+
+interface ProveedoresPeriodo {
+  /** Top por venta neta. */
+  filas: VentaPorClave[];
+  /** El resto sumado en una fila; null si hay 15 o menos. */
+  otros: OtrosProveedores | null;
+  /** Σ de todos los proveedores = venta neta del periodo cubierto. */
+  total: number;
+  /** Meses del periodo sin ranking de proveedor (filas previas a la migración 009). */
+  mesesSinDato: string[];
+}
+
+/** Une los rankings mensuales de proveedor en top 15 + "otros". */
+function proveedoresDe(partes: Array<{ mes: string; filas: VentaPorClave[] | null }>): ProveedoresPeriodo {
+  const todas = unirRankings(
+    partes.map((p) => p.filas ?? []),
+    Infinity,
+  );
+  const resto = todas.slice(TOP_PROVEEDORES);
+  let otros: OtrosProveedores | null = null;
+  if (resto.length) {
+    const venta = resto.reduce((s, f) => s + f.venta, 0);
+    const costo = resto.reduce((s, f) => s + f.costo, 0);
+    otros = { n: resto.length, venta, costo, margen: venta - costo, margenPct: pct(venta - costo, venta) };
+  }
+  return {
+    filas: todas.slice(0, TOP_PROVEEDORES),
+    otros,
+    total: todas.reduce((s, f) => s + f.venta, 0),
+    mesesSinDato: partes.filter((p) => !p.filas).map((p) => p.mes),
+  };
+}
+
+interface ClienteZona {
+  nit: string;
+  nombre: string;
+  venta: number;
+  /** Participación en la venta de la zona. */
+  pct: number;
+  /** Participación acumulada, clientes ordenados por venta desc. */
+  pctAcum: number;
+  /** Compra por mes, alineada con `ClientesPorZona.meses`. */
+  porMes: number[];
+}
+
+interface ZonaPareto {
+  zona: string;
+  venta: number;
+  /** Clientes que hacen el 80 % de la venta de la zona. */
+  clientes80: number;
+  clientes: ClienteZona[];
+}
+
+interface ClientesPorZona {
+  meses: string[];
+  /** Ordenadas por venta desc. */
+  zonas: ZonaPareto[];
+  /** Venta del NIT genérico de mostrador, fuera del pareto: Σ zonas + esto = venta neta. */
+  mostradorExcluido: number;
+  mesesSinDato: string[];
+}
+
+/**
+ * Pareto de clientes por zona (ciudad del cliente) a partir de los por_zona
+ * mensuales, que traen TODOS los clientes: el 80 % no se puede calcular sobre un
+ * top-N. Sólo se excluye el NIT genérico de mostrador; un NIT vacío se conserva
+ * para que las sumas cuadren.
+ */
+function clientesPorZona(partes: Array<{ mes: string; zonas: VentaPorZona[] | null }>): ClientesPorZona {
+  const n = partes.length;
+  const zonas = new Map<string, Map<string, { nombre: string; porMes: number[] }>>();
+  let mostradorExcluido = 0;
+  partes.forEach((p, i) => {
+    for (const z of p.zonas ?? []) {
+      const cs = zonas.get(z.zona) ?? new Map<string, { nombre: string; porMes: number[] }>();
+      for (const c of z.clientes) {
+        if (c.nit === NIT_MOSTRADOR_GENERICO) {
+          mostradorExcluido += c.venta;
+          continue;
+        }
+        const e = cs.get(c.nit) ?? { nombre: c.nombre, porMes: new Array<number>(n).fill(0) };
+        e.porMes[i] += c.venta;
+        cs.set(c.nit, e);
+      }
+      if (cs.size) zonas.set(z.zona, cs);
+    }
+  });
+
+  const out = [...zonas].map(([zona, cs]): ZonaPareto => {
+    const lista = [...cs]
+      .map(([nit, c]) => ({ nit, nombre: c.nombre, venta: c.porMes.reduce((s, v) => s + v, 0), porMes: c.porMes }))
+      .sort((a, b) => b.venta - a.venta);
+    const venta = lista.reduce((s, c) => s + c.venta, 0);
+    let acum = 0;
+    const clientes = lista.map((c) => {
+      acum += c.venta;
+      return { ...c, pct: div(c.venta, venta), pctAcum: div(acum, venta) };
+    });
+    const hasta80 = clientes.findIndex((c) => c.pctAcum >= 0.8);
+    return { zona, venta, clientes80: hasta80 === -1 ? clientes.length : hasta80 + 1, clientes };
+  });
+  out.sort((a, b) => b.venta - a.venta);
+
+  return {
+    meses: partes.map((p) => p.mes),
+    zonas: out,
+    mostradorExcluido,
+    mesesSinDato: partes.filter((p) => !p.zonas).map((p) => p.mes),
+  };
+}
+
+/**
+ * La respuesta principal lleva sólo el resumen de zonas: el detalle con todos los
+ * clientes y su columna por mes pesa ~30 veces el resto (391 KB contra 13 KB en
+ * la vista año) y en la vista mes viajaría de nuevo con cada página de la tabla
+ * de documentos. El detalle de UNA zona se pide aparte con `parte=zona`.
+ */
+function resumenZonas(z: ClientesPorZona) {
+  return {
+    meses: z.meses,
+    zonas: z.zonas.map(({ zona, venta, clientes80, clientes }) => ({ zona, venta, clientes80, clientes: clientes.length })),
+    mostradorExcluido: z.mostradorExcluido,
+    mesesSinDato: z.mesesSinDato,
+  };
+}
+
+/** Detalle de una zona; sin `zona` (o si no existe), la de mayor venta. */
+function detalleZona(z: ClientesPorZona | undefined, zona: string) {
+  if (!z) return { meses: [], zona: null };
+  return { meses: z.meses, zona: z.zonas.find((x) => x.zona === zona) ?? z.zonas[0] ?? null };
+}
+
+/**
+ * Da forma final a la respuesta de una vista: resumen de zonas por defecto, o
+ * sólo el detalle de una zona con `parte=zona`. Las dos salen del MISMO cálculo.
+ */
+function responder<T extends { clientesPorZona?: ClientesPorZona }>(r: T, sp: URLSearchParams, extra: object) {
+  if (sp.get('parte') === 'zona') {
+    return NextResponse.json({ ok: true, zonaDetalle: detalleZona(r.clientesPorZona, sp.get('zona') ?? '') });
+  }
+  const { clientesPorZona, ...resto } = r;
+  return NextResponse.json({
+    ...resto,
+    ...(clientesPorZona ? { clientesPorZona: resumenZonas(clientesPorZona) } : {}),
+    ...extra,
+  });
+}
+
 /** Totales de un conjunto de meses ya agregados. */
 function kpisDeMeses(meses: MesAgregado[]): Kpis {
   let venta = 0;
@@ -206,6 +373,19 @@ async function vistaAnio(anio: string, hoy: string) {
         'El backfill rellena un mes por hora.',
     );
   }
+  // Proveedores y zonas sobre ene → mes tope. Un mes sin fila o sin la dimensión
+  // (anterior a la migración 009) queda en mesesSinDato, nunca como cero.
+  const mesesPeriodo = Array.from({ length: mesTope }, (_, i) => `${anio}-${pad(i + 1)}`);
+  const filaDe = (mes: string) => meses.find((m) => m.mes === mes);
+  const proveedores = proveedoresDe(mesesPeriodo.map((mes) => ({ mes, filas: filaDe(mes)?.porProveedor ?? null })));
+  const zonas = clientesPorZona(mesesPeriodo.map((mes) => ({ mes, zonas: filaDe(mes)?.porZona ?? null })));
+  const sinDimension = proveedores.mesesSinDato.filter((mes) => filaDe(mes));
+  if (sinDimension.length) {
+    avisos.push(
+      `Proveedor y zona no están construidos para ${sinDimension.join(', ')}: esas secciones no incluyen esos meses.`,
+    );
+  }
+
   const faltan = serie.filter((s) => s.sinDatos).map((s) => s.mes);
   if (faltan.length) {
     avisos.push(`${faltan.length} de 12 meses de ${anio} sin construir (${faltan.join(', ')}).`);
@@ -238,6 +418,8 @@ async function vistaAnio(anio: string, hoy: string) {
     topProductos: unirRankings(meses.map((m) => m.topProductos), 10),
     porLinea: unirRankings(meses.map((m) => m.porLinea), 15),
     porVendedor: unirRankings(meses.map((m) => m.porVendedor), 15),
+    porProveedor: proveedores,
+    clientesPorZona: zonas,
     cartera,
     mesesConDatos: meses.length,
     avisos,
@@ -367,6 +549,8 @@ async function vistaMes(mes: string, f: Filtros, page: number, pageSize: number)
       topProductos: agg.topProductos.slice(0, 10),
       porLinea: agg.porLinea.slice(0, 15),
       porVendedor: agg.porVendedor.slice(0, 15),
+      porProveedor: proveedoresDe([{ mes, filas: agg.porProveedor }]),
+      clientesPorZona: clientesPorZona([{ mes, zonas: agg.porZona }]),
       documentos: { page: 1, pageSize, total: 0, filas: [] },
       cartera,
       avisos: [
@@ -474,6 +658,15 @@ async function vistaMes(mes: string, f: Filtros, page: number, pageSize: number)
     topProductos: agrupar(filtradas, (l) => l.codigoProducto, (l) => l.producto, 10),
     porLinea: agrupar(filtradas, (l) => l.linea, (l) => l.linea, 15),
     porVendedor: agrupar(filtradas, (l) => l.vendedor, (l) => l.vendedor, 15),
+    // Desde las líneas, así respetan los filtros. El snapshot trae el proveedor
+    // desde que corre el código de la migración 009.
+    porProveedor: proveedoresDe([
+      {
+        mes,
+        filas: agrupar(filtradas, (l) => l.nitProveedor ?? '', (l) => l.proveedor || '(sin proveedor)'),
+      },
+    ]),
+    clientesPorZona: clientesPorZona([{ mes, zonas: porZona(filtradas) }]),
     documentos: { page: pageSafe, pageSize, total, filas },
     variacion: variacionMes,
     cartera,
@@ -494,7 +687,7 @@ export async function GET(req: Request) {
 
     if (vista === 'anio') {
       const anio = /^\d{4}$/.test(sp.get('anio') ?? '') ? sp.get('anio')! : hoy.slice(0, 4);
-      return NextResponse.json({ ...(await vistaAnio(anio, hoy)), mesesDisponibles: mesesDelHorizonte(hoy) });
+      return responder(await vistaAnio(anio, hoy), sp, { mesesDisponibles: mesesDelHorizonte(hoy) });
     }
 
     const mes = /^\d{4}-\d{2}$/.test(sp.get('mes') ?? '') ? sp.get('mes')! : mesDe(hoy);
@@ -507,8 +700,7 @@ export async function GET(req: Request) {
     const page = Math.max(1, Number(sp.get('page')) || 1);
     const pageSize = Math.min(PAGE_SIZE_MAX, Math.max(5, Number(sp.get('pageSize')) || PAGE_SIZE_DEFAULT));
 
-    return NextResponse.json({
-      ...(await vistaMes(mes, filtros, page, pageSize)),
+    return responder(await vistaMes(mes, filtros, page, pageSize), sp, {
       mesesDisponibles: mesesDelHorizonte(hoy),
       mesActual: mesDe(hoy),
     });

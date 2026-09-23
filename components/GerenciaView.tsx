@@ -20,6 +20,12 @@ const MESES_LARGO = [
   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
 ];
 
+/**
+ * "Margen por línea de producto" se reemplazó por "Margen por proveedor". La
+ * sección se conserva sin renderizar y d.porLinea sigue llegando de la API.
+ */
+const MOSTRAR_MARGEN_POR_LINEA = false;
+
 const pctFmt = (v: number) => `${(v * 100).toFixed(1)}%`;
 /** Margen sobre las barras: "15,2%", con coma decimal. */
 const pctCorto = (v: number) => `${(v * 100).toFixed(1).replace('.', ',')}%`;
@@ -105,6 +111,44 @@ interface Rango {
   hasta: string;
 }
 
+interface OtrosProveedores {
+  n: number;
+  venta: number;
+  costo: number;
+  margen: number;
+  margenPct: number;
+}
+
+interface ProveedoresPeriodo {
+  filas: VentaPorClave[];
+  otros: OtrosProveedores | null;
+  total: number;
+  mesesSinDato: string[];
+}
+
+interface ClienteZona {
+  nit: string;
+  nombre: string;
+  venta: number;
+  pct: number;
+  pctAcum: number;
+  porMes: number[];
+}
+
+/** Resumen de zonas que viaja en la respuesta principal (sin clientes). */
+interface ClientesPorZona {
+  meses: string[];
+  zonas: Array<{ zona: string; venta: number; clientes80: number; clientes: number }>;
+  mostradorExcluido: number;
+  mesesSinDato: string[];
+}
+
+/** Detalle de UNA zona, pedido aparte con `parte=zona`. */
+interface ZonaDetalle {
+  meses: string[];
+  zona: { zona: string; venta: number; clientes80: number; clientes: ClienteZona[] } | null;
+}
+
 interface CarteraKpis {
   totalAbierto: number;
   totalVencido: number;
@@ -123,6 +167,8 @@ interface Respuesta {
   topProductos?: VentaPorClave[];
   porLinea?: VentaPorClave[];
   porVendedor?: VentaPorClave[];
+  porProveedor?: ProveedoresPeriodo;
+  clientesPorZona?: ClientesPorZona;
   // año
   anio?: string;
   serie?: PuntoMes[];
@@ -233,9 +279,21 @@ function GraficoBarras({
 }
 
 /** Ranking con barra de proporción sobre la venta. */
-function Ranking({ filas, etiqueta, vacio }: { filas: VentaPorClave[]; etiqueta: string; vacio: string }) {
+function Ranking({
+  filas,
+  etiqueta,
+  vacio,
+  otros,
+}: {
+  filas: VentaPorClave[];
+  etiqueta: string;
+  vacio: string;
+  /** Fila final que agrupa el resto del ranking (p. ej. "Otros (N proveedores)"). */
+  otros?: { nombre: string; venta: number; margen: number; margenPct: number } | null;
+}) {
   if (!filas.length) return <EmptyState title={vacio} />;
-  const max = Math.max(1, ...filas.map((f) => Math.abs(f.venta)));
+  const todas = otros ? [...filas, { clave: '__otros__', costo: otros.venta - otros.margen, documentos: 0, ...otros }] : filas;
+  const max = Math.max(1, ...todas.map((f) => Math.abs(f.venta)));
 
   return (
     <div className="overflow-x-auto">
@@ -249,10 +307,10 @@ function Ranking({ filas, etiqueta, vacio }: { filas: VentaPorClave[]; etiqueta:
           </tr>
         </thead>
         <tbody>
-          {filas.map((f) => (
+          {todas.map((f) => (
             <tr key={f.clave} className="border-t border-line hover:bg-surface-hover">
               <td className="px-4 py-2.5">
-                <div className="truncate text-ink" title={f.nombre}>
+                <div className={`truncate ${f.clave === '__otros__' ? 'italic text-ink-muted' : 'text-ink'}`} title={f.nombre}>
                   {f.nombre}
                 </div>
                 <div className="mt-1 h-1 w-full rounded bg-surface-muted">
@@ -275,6 +333,159 @@ function Ranking({ filas, etiqueta, vacio }: { filas: VentaPorClave[]; etiqueta:
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/**
+ * Pareto de clientes de una zona: venta, participación y acumulado, con una
+ * columna por mes cuando el periodo tiene más de uno. Las filas que hacen el
+ * 80 % van marcadas y una línea separa el corte.
+ */
+function ParetoZonas({ data, urlBase }: { data: ClientesPorZona; urlBase: string }) {
+  const [zonaSel, setZonaSel] = useState('');
+  const resumen = data.zonas.find((z) => z.zona === zonaSel) ?? data.zonas[0];
+  const [detalle, setDetalle] = useState<ZonaDetalle | null>(null);
+  const [cargando, setCargando] = useState(false);
+
+  // El detalle de la zona se pide aparte: con todos sus clientes y la columna por
+  // mes es el grueso del peso, y no debe viajar con cada página de documentos.
+  const zonaPedida = resumen?.zona ?? '';
+  useEffect(() => {
+    if (!zonaPedida) return;
+    let vigente = true;
+    setCargando(true);
+    fetch(`${urlBase}&parte=zona&zona=${encodeURIComponent(zonaPedida)}`)
+      .then((r) => r.json())
+      .then((j: { zonaDetalle?: ZonaDetalle }) => {
+        if (vigente) setDetalle(j.zonaDetalle ?? null);
+      })
+      .catch(() => {
+        if (vigente) setDetalle(null);
+      })
+      .finally(() => {
+        if (vigente) setCargando(false);
+      });
+    return () => {
+      vigente = false;
+    };
+  }, [urlBase, zonaPedida]);
+
+  if (!resumen) return <EmptyState title="Sin clientes por zona en el periodo" />;
+  // Mientras llega el detalle de otra zona, la tabla anterior se atenúa en vez
+  // de desaparecer.
+  const zona = detalle?.zona ?? null;
+  const meses = detalle?.meses ?? data.meses;
+  const porMes = meses.length > 1;
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-end gap-x-8 gap-y-3 border-b border-line px-4 py-4">
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium uppercase tracking-wider text-ink-muted">Zona</span>
+          <select
+            value={resumen.zona}
+            onChange={(e) => setZonaSel(e.target.value)}
+            className="min-w-[14rem] rounded border border-line bg-surface px-3 py-2 text-sm text-ink"
+          >
+            {data.zonas.map((z) => (
+              <option key={z.zona} value={z.zona}>
+                {z.zona} · {kpiMoney(z.venta).value}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
+          <div>
+            <div className="text-xs uppercase tracking-wider text-ink-muted">Clientes</div>
+            <div className="tabular font-semibold text-ink">{miles(resumen.clientes)}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-wider text-ink-muted">Venta de la zona</div>
+            <div className="tabular font-semibold text-ink" title={formatPrice(resumen.venta)}>
+              {kpiMoney(resumen.venta).value}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-wider text-ink-muted">Hacen el 80 %</div>
+            <div className="tabular font-semibold text-accent">
+              {miles(resumen.clientes80)} {resumen.clientes80 === 1 ? 'cliente' : 'clientes'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {!zona ? (
+        <div className="px-4 py-8 text-center text-sm text-ink-muted">
+          {cargando ? 'Cargando clientes de la zona…' : 'No se pudo cargar el detalle de la zona'}
+        </div>
+      ) : (
+        <div className={`max-h-[560px] overflow-auto transition-opacity ${cargando ? 'opacity-50' : ''}`}>
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 z-10 bg-surface-muted">
+              <tr>
+                <Th>#</Th>
+                <Th>Cliente</Th>
+                <Th align="right">Venta neta</Th>
+                <Th align="right">% zona</Th>
+                <Th align="right">% acum.</Th>
+                {porMes &&
+                  meses.map((m) => (
+                    <Th key={m} align="right">
+                      {MESES_CORTO[Number(m.slice(5, 7)) - 1]}
+                    </Th>
+                  ))}
+              </tr>
+            </thead>
+            <tbody>
+              {zona.clientes.map((c, i) => {
+                const en80 = i < zona.clientes80;
+                return (
+                  <tr
+                    key={c.nit || `sin-nit-${i}`}
+                    className={`border-t hover:bg-surface-hover ${
+                      i === zona.clientes80 ? 'border-t-2 border-t-accent' : 'border-line'
+                    }`}
+                  >
+                    <td className={`tabular whitespace-nowrap px-4 py-2 text-ink-faint ${en80 ? 'border-l-2 border-l-accent' : ''}`}>
+                      {i + 1}
+                    </td>
+                    <td className="px-4 py-2">
+                      <div className={`max-w-[18rem] truncate ${en80 ? 'text-ink' : 'text-ink-muted'}`} title={`${c.nombre} · ${c.nit}`}>
+                        {c.nombre}
+                      </div>
+                    </td>
+                    <td className="tabular whitespace-nowrap px-4 py-2 text-right text-ink">{formatPrice(c.venta)}</td>
+                    <td className="tabular whitespace-nowrap px-4 py-2 text-right text-ink-muted">{pctFmt(c.pct)}</td>
+                    <td className={`tabular whitespace-nowrap px-4 py-2 text-right ${en80 ? 'font-medium text-accent' : 'text-ink-muted'}`}>
+                      {pctFmt(c.pctAcum)}
+                    </td>
+                    {porMes &&
+                      c.porMes.map((v, j) => (
+                        <td key={j} className="tabular whitespace-nowrap px-4 py-2 text-right text-ink-muted">
+                          {v === 0 ? <span className="text-ink-faint">—</span> : formatPrice(v)}
+                        </td>
+                      ))}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="space-y-1 border-t border-line px-4 py-3 text-xs text-ink-faint">
+        <p>
+          <span className="mr-1 inline-block h-2.5 w-0.5 bg-accent align-middle" /> Clientes que hacen el 80 % de la venta de la
+          zona; la línea marca el corte. Zona = ciudad del cliente.
+        </p>
+        {data.mostradorExcluido !== 0 && (
+          <p>Excluye VENTAS MOSTRADOR (NIT 22222222): {formatPrice(data.mostradorExcluido)} en el periodo, todas las zonas.</p>
+        )}
+        {data.mesesSinDato.length > 0 && (
+          <p className="text-warn">⚠ Sin datos de zona para {data.mesesSinDato.map(mesCorto).join(', ')}.</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -372,20 +583,23 @@ export default function GerenciaView() {
   // Cambiar de mes o de filtro vuelve a la primera página.
   useEffect(() => setPage(1), [mes, vendedor, linea, grupo, cliente]);
 
-  const url = useMemo(() => {
+  // Periodo y filtros, SIN página: es la base del detalle de zona, que no debe
+  // re-pedirse al paginar la tabla de documentos.
+  const urlBase = useMemo(() => {
     const p = new URLSearchParams({ vista });
     if (vista === 'anio') {
       p.set('anio', anio);
     } else {
       p.set('mes', mes);
-      p.set('page', String(page));
       if (vendedor) p.set('vendedor', vendedor);
       if (linea) p.set('linea', linea);
       if (grupo) p.set('grupo', grupo);
       if (cliente) p.set('cliente', cliente);
     }
     return `/api/gerencia?${p}`;
-  }, [vista, anio, mes, page, vendedor, linea, grupo, cliente]);
+  }, [vista, anio, mes, vendedor, linea, grupo, cliente]);
+
+  const url = vista === 'anio' ? urlBase : `${urlBase}&page=${page}`;
 
   const cargar = useCallback(async () => {
     setLoading(true);
@@ -678,10 +892,33 @@ export default function GerenciaView() {
       )}
 
       <div className="grid grid-cols-1 gap-8 xl:grid-cols-2">
+        {MOSTRAR_MARGEN_POR_LINEA && (
+          <section className="space-y-3">
+            <SectionTitle>Margen por línea de producto</SectionTitle>
+            <Card className="overflow-hidden">
+              <Ranking filas={d?.porLinea ?? []} etiqueta="Línea" vacio="Sin líneas en el periodo" />
+            </Card>
+          </section>
+        )}
+
         <section className="space-y-3">
-          <SectionTitle>Margen por línea de producto</SectionTitle>
+          <SectionTitle>Margen por proveedor</SectionTitle>
           <Card className="overflow-hidden">
-            <Ranking filas={d?.porLinea ?? []} etiqueta="Línea" vacio="Sin líneas en el periodo" />
+            <Ranking
+              filas={d?.porProveedor?.filas ?? []}
+              etiqueta="Proveedor"
+              vacio="Sin proveedores en el periodo"
+              otros={
+                d?.porProveedor?.otros
+                  ? { nombre: `Otros (${miles(d.porProveedor.otros.n)} proveedores)`, ...d.porProveedor.otros }
+                  : null
+              }
+            />
+            {!!d?.porProveedor?.mesesSinDato.length && (
+              <p className="border-t border-line px-4 py-3 text-xs text-warn">
+                ⚠ Sin datos de proveedor para {d.porProveedor.mesesSinDato.map(mesCorto).join(', ')}.
+              </p>
+            )}
           </Card>
         </section>
 
@@ -692,6 +929,17 @@ export default function GerenciaView() {
           </Card>
         </section>
       </div>
+
+      <section className="space-y-3">
+        <SectionTitle>Clientes por zona</SectionTitle>
+        <Card className="overflow-hidden">
+          {d?.clientesPorZona ? (
+            <ParetoZonas data={d.clientesPorZona} urlBase={urlBase} />
+          ) : (
+            <EmptyState title="Sin clientes por zona en el periodo" />
+          )}
+        </Card>
+      </section>
 
       <div className="grid grid-cols-1 gap-8 xl:grid-cols-2">
         <section className="space-y-3">
