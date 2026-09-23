@@ -1,4 +1,5 @@
-import { hgiGet, HgiError, getValidToken } from './client';
+import { HgiError, getValidToken } from './client';
+import { hgiFetchPorDefecto, type HgiFetch } from './pygFetch';
 import {
   mapVentas,
   aggregateVentas,
@@ -99,12 +100,12 @@ const params = (r: Rango) => ({
 });
 
 /** Una ventana, con reintento y backoff exponencial ante fallos transitorios. */
-async function fetchVentana(r: Rango): Promise<VentaLinea[]> {
+async function fetchVentana(r: Rango, fetcher: HgiFetch): Promise<VentaLinea[]> {
   let ultimo: Error | null = null;
   for (let intento = 0; intento < REINTENTOS; intento++) {
     if (intento > 0) await sleep(BACKOFF_BASE_MS * 2 ** (intento - 1));
     try {
-      const raw = await hgiGet<HgiVentaLinea[]>('Documentos', 'ObtenerDetalleReporte', params(r), {
+      const raw = await fetcher<HgiVentaLinea[]>('Documentos', 'ObtenerDetalleReporte', params(r), {
         timeoutMs: VENTAS_TIMEOUT_MS,
       });
       return mapVentas(raw);
@@ -122,15 +123,17 @@ async function fetchVentana(r: Rango): Promise<VentaLinea[]> {
  * Ejecuta las ventanas con concurrencia limitada y una pausa entre llamadas.
  * Exportada porque el backfill mensual (lib/hgi/ventasMensual.ts) trae meses
  * históricos con exactamente la misma estrategia de troceo y reintentos.
+ * `fetcher` es inyectable para scripts locales (scripts/rebuild-meses.ts): en
+ * Vercel siempre es hgiGet. Ver la nota en lib/hgi/pygFetch.ts.
  */
-export async function fetchRango(r: Rango): Promise<VentaLinea[]> {
+export async function fetchRango(r: Rango, fetcher: HgiFetch = hgiFetchPorDefecto): Promise<VentaLinea[]> {
   const trozos = trocear(r);
   const out: VentaLinea[] = [];
   let i = 0;
   async function worker() {
     while (i < trozos.length) {
       const v = trozos[i++];
-      out.push(...(await fetchVentana(v)));
+      out.push(...(await fetchVentana(v, fetcher)));
       await sleep(PAUSA_MS);
     }
   }
