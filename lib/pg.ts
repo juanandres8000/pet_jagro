@@ -41,3 +41,43 @@ export function getSql(): Sql {
   });
   return client;
 }
+
+/**
+ * Descarta el cliente actual: el siguiente getSql() abre una conexión nueva.
+ * Se usa cuando una query se queda sin respuesta (ver conTimeout).
+ */
+function descartarCliente(): void {
+  const viejo = client;
+  client = null;
+  viejo?.end({ timeout: 1 }).catch(() => {});
+}
+
+/**
+ * Query con timeout del lado del CLIENTE. Si no responde en `ms`, se cancela, se
+ * descarta la conexión y se lanza un error: la ruta falla rápido en vez de
+ * colgarse hasta el maxDuration de Vercel.
+ *
+ * Por qué no basta `statement_timeout`: el cuelgue que se vio en producción
+ * (trampa 2 del pooler en CLAUDE.md) deja el backend en `active` /
+ * `ClientRead` — la query YA terminó y Postgres espera al cliente. Ahí el
+ * servidor no está ejecutando nada, así que `statement_timeout` nunca dispara.
+ */
+export async function conTimeout<T>(query: PromiseLike<T> & { cancel?: () => unknown }, ms: number, etiqueta: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const limite = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      try {
+        query.cancel?.();
+      } catch {
+        // la query pudo no haber arrancado; igual se descarta la conexión
+      }
+      descartarCliente();
+      reject(new Error(`[pg] ${etiqueta}: sin respuesta en ${ms} ms, conexión descartada`));
+    }, ms);
+  });
+  try {
+    return await Promise.race([query, limite]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
