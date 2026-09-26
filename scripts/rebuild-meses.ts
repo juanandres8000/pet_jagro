@@ -2,7 +2,7 @@
  * Reconstruye meses de hgi_ventas_mensual desde la terminal local, reanudable.
  *
  * ══ CÓMO CORRERLO ═════════════════════════════════════════════════════════
- *   node --env-file=.env.local --import ./scripts/ts-resolve.mjs scripts/rebuild-meses.ts [--dry]
+ *   node --env-file=.env.local --import ./scripts/ts-resolve.mjs scripts/rebuild-meses.ts [--dry] [--mes=YYYY-MM]
  *
  * Existe porque el backfill sólo corría como cron de Vercel (un mes por hora) y
  * en local `hgiGet` muere en `getConfig()`, que exige HGI_USUARIO/HGI_CLAVE —
@@ -19,14 +19,21 @@
  * por_zona = venta neta del mes, y SÓLO entonces escribe. Si la verificación
  * falla, el mes se salta y queda intacto.
  *
- * Reanudable: salta los meses que ya tienen `por_proveedor` NOT NULL.
- * `--dry` construye y verifica sin escribir.
+ * Reanudable: salta los meses cuyo `por_zona` ya está por vendedor ("Zona N",
+ * ver lib/hgi/zonas.ts). Los construidos con la regla anterior agrupan por
+ * ciudad y se rehacen.
+ * `--dry` construye y verifica sin escribir. `--mes=YYYY-MM` procesa sólo ese
+ * mes, aunque ya esté hecho.
+ * Por mes imprime la distribución por zona, los vendedores sin zona y los
+ * clientes que caen en "Sin zona".
  */
 import { getSql } from '../lib/pg';
 import { fetchRango, hoyColombia } from '../lib/hgi/ventas';
 import { agregarMes, rangoDeMes, mesDe } from '../lib/hgi/ventasMensual';
 import { writeMes } from '../lib/hgi/ventasMensualStore';
 import type { HgiFetch } from '../lib/hgi/pygFetch';
+import { ZONA_SIN, esPorZonaVendedor, zonaDeVendedor } from '../lib/hgi/zonas';
+import type { VentaPorZona } from '../lib/hgi/mappers/ventas';
 
 /** 2026-09 → 2025-01, del más reciente al más antiguo. 2024 no se toca. */
 const DESDE = '2025-01';
@@ -37,6 +44,8 @@ const PAUSA_ENTRE_MESES_MS = 5_000;
 const TOLERANCIA = 1;
 
 const DRY = process.argv.includes('--dry');
+const MES = process.argv.find((a) => a.startsWith('--mes='))?.slice('--mes='.length);
+if (MES !== undefined && !/^\d{4}-\d{2}$/.test(MES)) throw new Error(`--mes inválido: ${MES} (formato YYYY-MM)`);
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const fmt = (n: number) => n.toLocaleString('es-CO', { maximumFractionDigits: 0 });
 const ts = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
@@ -134,17 +143,56 @@ const fetcherLocal: HgiFetch = async (recurso, metodo, params, opts) => {
 
 async function yaReconstruidos(): Promise<Set<string>> {
   const rows = (await getSql()`
-    SELECT mes FROM hgi_ventas_mensual WHERE por_proveedor IS NOT NULL
-  `) as unknown as Array<{ mes: string }>;
-  return new Set(rows.map((r) => r.mes));
+    SELECT mes, por_zona FROM hgi_ventas_mensual WHERE por_proveedor IS NOT NULL AND por_zona IS NOT NULL
+  `) as unknown as Array<{ mes: string; por_zona: VentaPorZona[] }>;
+  return new Set(rows.filter((r) => esPorZonaVendedor(r.por_zona)).map((r) => r.mes));
+}
+
+/** Distribución por zona, vendedores sin zona y clientes que caen en "Sin zona". */
+function reporteZonas(zonas: VentaPorZona[], neta: number, vendedoresSinZona: Map<string, number>) {
+  const pct = (v: number) => (neta === 0 ? '—' : `${((v / neta) * 100).toFixed(2)} %`);
+  const nits = new Map<string, number>();
+  for (const z of zonas) for (const c of z.clientes) nits.set(c.nit, (nits.get(c.nit) ?? 0) + 1);
+  const multi = [...nits.values()].filter((n) => n > 1).length;
+  log(`   zona         venta neta          %        clientes  docs`);
+  for (const z of zonas) {
+    log(
+      `   ${z.zona.padEnd(10)} ${fmt(z.venta).padStart(16)}  ${pct(z.venta).padStart(8)}  ${String(z.clientes.length).padStart(8)}  ${String(z.documentos).padStart(5)}`,
+    );
+  }
+  log(`   clientes distintos ${nits.size} · en más de una zona ${multi}`);
+  if (vendedoresSinZona.size === 0) log('   vendedores sin zona: ninguno');
+  for (const [v, venta] of vendedoresSinZona) log(`   vendedor sin zona: ${JSON.stringify(v)} · ${fmt(venta)}`);
+  const sin = zonas.find((z) => z.zona === ZONA_SIN);
+  for (const c of sin?.clientes ?? []) log(`   cliente en ${ZONA_SIN}: ${c.nit} ${c.nombre} · ${fmt(c.venta)} · ${c.documentos} docs`);
+}
+
+/**
+ * Antes/después contra la fila guardada: la venta neta del mes no depende de
+ * cómo se agrupe la zona. En el mes en curso puede moverse por facturas nuevas
+ * entre el built_at guardado y esta corrida; por eso se imprime el built_at.
+ */
+async function baseline(mes: string, neta: number, zonas: VentaPorZona[]) {
+  const rows = (await getSql()`
+    SELECT venta, descuento, por_zona, built_at, hasta FROM hgi_ventas_mensual WHERE mes = ${mes}
+  `) as unknown as Array<{ venta: number; descuento: number; por_zona: VentaPorZona[] | null; built_at: Date; hasta: string }>;
+  const f = rows[0];
+  if (!f) return log('   baseline: no hay fila guardada para el mes');
+  const netaAntes = Number(f.venta) - Number(f.descuento);
+  const zonaAntes = (f.por_zona ?? []).reduce((s, z) => s + z.venta, 0);
+  const zonaDespues = zonas.reduce((s, z) => s + z.venta, 0);
+  log(`   baseline guardado (built_at ${new Date(f.built_at).toISOString()}, hasta ${f.hasta}): neta ${fmt(netaAntes)} · Σ por_zona ${fmt(zonaAntes)} en ${f.por_zona?.length ?? 0} zonas`);
+  log(`   después: neta ${fmt(neta)} · Σ por_zona ${fmt(zonaDespues)} en ${zonas.length} zonas · Δ neta ${fmt(neta - netaAntes)}`);
 }
 
 async function main() {
   const hoy = hoyColombia();
   const mesActual = mesDe(hoy);
-  const lista = meses();
-  const hechos = await yaReconstruidos();
-  log(`Reconstrucción ${HASTA} → ${DESDE} (${lista.length} meses)${DRY ? ' · DRY RUN, no escribe' : ''}`);
+  const lista = MES ? [MES] : meses();
+  const hechos = MES ? new Set<string>() : await yaReconstruidos();
+  log(
+    `Reconstrucción ${MES ?? `${HASTA} → ${DESDE}`} (${lista.length} meses)${DRY ? ' · DRY RUN, no escribe' : ''}`,
+  );
 
   let ok = 0;
   let fallos = 0;
@@ -153,7 +201,7 @@ async function main() {
   for (const [i, mes] of lista.entries()) {
     if (hechos.has(mes)) {
       saltados++;
-      log(`${mes} · SALTADO (ya tiene por_proveedor)`);
+      log(`${mes} · SALTADO (ya tiene por_zona por vendedor)`);
       continue;
     }
     if (i > 0) await sleep(PAUSA_ENTRE_MESES_MS);
@@ -163,6 +211,9 @@ async function main() {
       const rango = rangoDeMes(mes, hoy);
       const lineas = await fetchRango(rango, fetcherLocal);
       const fila = agregarMes(mes, lineas, rango, mes === mesActual);
+      const vendedoresSinZona = new Map(
+        fila.porVendedor.filter((v) => zonaDeVendedor(v.clave) === ZONA_SIN).map((v) => [v.clave, v.venta] as const),
+      );
 
       const neta = fila.venta - fila.descuento; // `venta` es la bruta (ver agregarMes)
       const sProv = (fila.porProveedor ?? []).reduce((s, p) => s + p.venta, 0);
@@ -185,6 +236,8 @@ async function main() {
       if (!DRY) await writeMes(fila);
       ok++;
       log(`${resumen} · OK${DRY ? ' (dry, no escrito)' : ''}`);
+      reporteZonas(fila.porZona ?? [], neta, vendedoresSinZona);
+      await baseline(mes, neta, fila.porZona ?? []);
     } catch (err) {
       fallos++;
       const seg = ((Date.now() - t0) / 1000).toFixed(1);

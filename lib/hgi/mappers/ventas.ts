@@ -31,6 +31,8 @@
  * (regla 1). Es la única lectura de IVA coherente a nivel de línea.
  */
 
+import { zonaDeVendedor, ordenZona } from '../zonas';
+
 export interface HgiVentaLinea {
   Anyo?: number;
   Mes?: number;
@@ -82,10 +84,9 @@ export interface VentaLinea {
   nitTercero: string;
   tercero: string;
   /**
-   * NombreCiudadTercero. Es la "zona" de los rankings: NombreZonaTercero viene
-   * "GENERAL" en todas las líneas (las zonas no están configuradas en el ERP) y
-   * el maestro de terceros tampoco trae zona ni barrio. Medido en sep-2026: 56
-   * ciudades, 0 vacías, ningún NIT en más de una ciudad.
+   * NombreCiudadTercero. Fue la "zona" de los rankings hasta que el cliente
+   * definió zonas por vendedor (ver lib/hgi/zonas.ts); se conserva en la línea.
+   * Medido en sep-2026: 56 ciudades, 0 vacías, ningún NIT en más de una ciudad.
    */
   ciudad: string;
   /** NitProveedor del producto. Opcional: las líneas guardadas antes no lo traen. */
@@ -304,7 +305,7 @@ export interface ClienteDeZona {
   documentos: number;
 }
 
-/** Una zona (ciudad del cliente) con TODOS sus clientes, ordenados por venta. */
+/** Una zona ("Zona N" o "Sin zona") con TODOS sus clientes, ordenados por venta. */
 export interface VentaPorZona {
   zona: string;
   venta: number;
@@ -315,11 +316,15 @@ export interface VentaPorZona {
 /**
  * Venta por zona con la lista COMPLETA de clientes, sin límite: el pareto de
  * clientes por zona necesita la cola entera, no un top-N.
+ *
+ * La zona sale del VENDEDOR de cada línea (lib/hgi/zonas.ts), no del cliente:
+ * un cliente atendido por dos vendedores en el mes aparece en las dos zonas con
+ * la venta de cada uno, y Σ zonas sigue siendo la venta neta del mes.
  */
 export function porZona(ls: VentaLinea[]): VentaPorZona[] {
   const zonas = new Map<string, { docs: Set<string>; clientes: Map<string, { nombre: string; venta: number; docs: Set<string> }> }>();
   for (const l of ls) {
-    const zona = l.ciudad || '(sin ciudad)';
+    const zona = zonaDeVendedor(l.vendedor);
     const z = zonas.get(zona) ?? { docs: new Set<string>(), clientes: new Map() };
     z.docs.add(l.documento);
     const c = z.clientes.get(l.nitTercero) ?? { nombre: l.tercero, venta: 0, docs: new Set<string>() };
@@ -335,7 +340,7 @@ export function porZona(ls: VentaLinea[]): VentaPorZona[] {
         .sort((a, b) => b.venta - a.venta);
       return { zona, venta: clientes.reduce((s, c) => s + c.venta, 0), documentos: z.docs.size, clientes };
     })
-    .sort((a, b) => b.venta - a.venta);
+    .sort((a, b) => ordenZona(a.zona) - ordenZona(b.zona));
 }
 
 /** Serie diaria ordenada cronológicamente. */

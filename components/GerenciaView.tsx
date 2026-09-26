@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { VentaPorClave } from '@/lib/hgi/mappers/ventas';
 import { PageHeader, SectionTitle, KpiCard, Card, Th, EmptyState, FilterButton, Tone } from '@/components/ui';
-import { formatPrice, kpiMoney } from '@/lib/format';
+import { formatPrice, formatMillones, kpiMoney } from '@/lib/format';
 
 /**
  * Vista Gerencia con dos lecturas: AÑO y MES.
@@ -338,7 +338,9 @@ function Ranking({
 }
 
 /**
- * Pareto de clientes de una zona: venta, participación y acumulado, con una
+ * Pareto de clientes de una zona (o del consolidado "Todas las zonas", que la
+ * API manda primero y es la selección por defecto): venta, participación y
+ * acumulado, con una
  * columna por mes cuando el periodo tiene más de uno. Las filas que hacen el
  * 80 % van marcadas y una línea separa el corte.
  */
@@ -390,7 +392,7 @@ function ParetoZonas({ data, urlBase }: { data: ClientesPorZona; urlBase: string
           >
             {data.zonas.map((z) => (
               <option key={z.zona} value={z.zona}>
-                {z.zona} · {kpiMoney(z.venta).value}
+                {z.zona} · {formatMillones(z.venta)}
               </option>
             ))}
           </select>
@@ -477,7 +479,8 @@ function ParetoZonas({ data, urlBase }: { data: ClientesPorZona; urlBase: string
       <div className="space-y-1 border-t border-line px-4 py-3 text-xs text-ink-faint">
         <p>
           <span className="mr-1 inline-block h-2.5 w-0.5 bg-accent align-middle" /> Clientes que hacen el 80 % de la venta de la
-          zona; la línea marca el corte. Zona = ciudad del cliente.
+          zona; la línea marca el corte. La zona es la del vendedor que facturó: un cliente atendido por dos vendedores
+          aparece en ambas zonas y una sola vez en Todas las zonas.
         </p>
         {data.mostradorExcluido !== 0 && (
           <p>Excluye VENTAS MOSTRADOR (NIT 22222222): {formatPrice(data.mostradorExcluido)} en el periodo, todas las zonas.</p>

@@ -21,6 +21,10 @@ export const formatCompactPrice = (value: number) =>
     ? `$ ${new Intl.NumberFormat('es-CO').format(Math.round(value / UN_MILLON))} M`
     : formatPrice(value);
 
+/** Siempre en millones, sin decimales: "$ 412 M". Para etiquetas compactas (selectores). */
+export const formatMillones = (value: number) =>
+  `$ ${new Intl.NumberFormat('es-CO').format(Math.round(value / UN_MILLON))} M`;
+
 /**
  * Valor + tooltip para una KPI card: compacta sólo si no cabría, y en ese caso
  * deja el valor completo en `title`. Pensado para esparcirse en <KpiCard>:

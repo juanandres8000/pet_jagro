@@ -438,6 +438,22 @@ Lo que queda y por qué: el tipo `DeliveryZone` y los campos `customer.zone` /
 son candidatos a borrarse con ellos. El adaptador conserva el mapeo por si
 HGINet algún día envía zonas de verdad; ahí se reintroduce la UI.
 
+### Zonas comerciales = vendedor (Gerencia → Clientes por zona)
+No confundir con las zonas de entrega de arriba. `NombreZonaTercero` viene
+"GENERAL" en todas las líneas, así que el cliente definió **zona = vendedor**:
+Zona 1..6 según `lib/hgi/zonas.ts` (match por primer nombre + apellido,
+normalizado). La UI muestra **sólo "Zona N"**, nunca el nombre del vendedor.
+Vendedor sin match (hoy el comodín `GENERAL`) → "Sin zona" + `console.warn` una
+vez por nombre; nunca lanza.
+
+- La zona sale del vendedor de **cada línea**: un cliente atendido por dos
+  vendedores aparece en las dos zonas, y Σ zonas = venta neta del mes.
+- `/api/gerencia` antepone el consolidado **"Todas las zonas"** (clientes unidos
+  por NIT) y es la selección por defecto.
+- Las filas de `hgi_ventas_mensual` construidas antes agrupan por **ciudad**.
+  `esPorZonaVendedor` las trata como mes sin dato hasta reconstruirlas con
+  `scripts/rebuild-meses.ts` (que ahora salta sólo los meses ya por vendedor).
+
 ### Tipografía
 - **Fraunces** (serif) → títulos de página y headings de sección: `font-serif`
 - **Inter** (sans) → body, datos, tablas (default en `<body>`)
