@@ -80,3 +80,71 @@ input:focus, select:focus, textarea:focus {
   border-color: var(--accent) !important;
   box-shadow: 0 0 0 3px rgba(30, 77, 59, 0.12);
 }
+
+/* ── Login JumpLight ──────────────────────────────────────────────────────
+   Todo bajo .jl-login: el resto de la app sigue con la paleta editorial.
+   El tema sale de prefers-color-scheme y NO de la clase `dark` que pone
+   ThemeContext en <html>, que aquí se ignora a propósito. */
+.jl-login {
+  --jl-bg: #f4f7f9;
+  --jl-fg: #0b0f14;
+  --jl-surface: #ffffff;
+  --jl-border: #d5dee6;
+  --jl-muted: #5a6a78;
+  --jl-accent: #2dd4bf;
+  --jl-accent-ink: #0b7a6d;
+  --jl-danger: #b42318;
+  --jl-danger-soft: #fef3f2;
+  /* El panel de marca es oscuro en los dos temas. */
+  --jl-panel-bg: #0b0f14;
+  --jl-panel-fg: #e6edf3;
+  --jl-panel-muted: #8b9bab;
+  --jl-panel-border: #1e2a35;
+
+  min-height: 100vh;
+  background: var(--jl-bg);
+  color: var(--jl-fg);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-color-scheme: dark) {
+  .jl-login {
+    --jl-bg: #0b0f14;
+    --jl-fg: #e6edf3;
+    --jl-surface: #111820;
+    --jl-border: #1e2a35;
+    --jl-muted: #8b9bab;
+    --jl-accent-ink: #2dd4bf;
+    --jl-danger: #fda29b;
+    --jl-danger-soft: #2a1215;
+  }
+}
+
+.jl-login .jl-mono {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+/* Anula las reglas globales de select y :focus (con !important) de arriba:
+   misma importancia y más especificidad (.jl-login + elemento + pseudo). */
+.jl-login input:focus,
+.jl-login select:focus,
+.jl-login textarea:focus {
+  outline: none;
+  border-color: var(--jl-accent) !important;
+  box-shadow: 0 0 0 3px rgb(45 212 191 / 0.25);
+}
+
+.jl-login select {
+  background-image: none;
+  padding-right: 0.75rem;
+  -webkit-appearance: auto;
+  -moz-appearance: auto;
+  appearance: auto;
+}
+
+.jl-login a:focus-visible,
+.jl-login button:focus-visible {
+  outline: 2px solid var(--jl-accent);
+  outline-offset: 2px;
+}
