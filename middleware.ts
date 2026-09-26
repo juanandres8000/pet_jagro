@@ -5,7 +5,8 @@ import { updateSession } from '@/lib/supabase/middleware';
  * Protege TODA la app, páginas y app/api/*, con la sesión de Supabase Auth.
  *
  * Públicas:
- *  - /login y /auth/*: el propio flujo de acceso.
+ *  - /login y /auth/* (callback de los enlaces de correo, definir contraseña):
+ *    el propio flujo de acceso.
  *  - /api/hgi/refresh: lo llaman los crons de Vercel, que no tienen sesión. Se
  *    autentica solo con CRON_SECRET (GET) o x-hgi-refresh-secret (POST); aquí
  *    no se toca.
@@ -13,17 +14,19 @@ import { updateSession } from '@/lib/supabase/middleware';
  *
  * Sin sesión: páginas → /login?next=<path>; APIs → 401 JSON.
  */
-const esPublica = (path: string) =>
-  path === '/login' || path.startsWith('/auth/') || path === '/api/hgi/refresh' || path.startsWith('/api/hgi/refresh/');
+const esRefreshHgi = (path: string) => path === '/api/hgi/refresh' || path.startsWith('/api/hgi/refresh/');
 
 export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
-  if (esPublica(pathname)) {
-    // El login también refresca: si ya hay sesión, no tiene sentido volver a pedirla.
-    if (pathname !== '/login') return NextResponse.next();
-  }
+  // Ni siquiera se refresca sesión: los crons no traen cookies.
+  if (esRefreshHgi(pathname)) return NextResponse.next();
 
   const { response, user } = await updateSession(request);
+
+  // /auth/* es público y NUNCA se redirige aquí: el callback llega sin sesión
+  // (la crea él) y /auth/definir-contrasena exige sesión por su cuenta. Sí pasa
+  // por updateSession para que la sesión recién creada se mantenga fresca.
+  if (pathname.startsWith('/auth/')) return response;
 
   if (pathname === '/login') {
     if (!user) return response;
