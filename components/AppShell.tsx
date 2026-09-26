@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
+import { useUsuario } from '@/components/UsuarioContext';
+import { logout } from '@/app/(auth)/login/actions';
 import GerenciaView from '@/components/GerenciaView';
 import PygView from '@/components/PygView';
 import PickingView from '@/components/PickingView';
@@ -76,6 +78,7 @@ export default function AppShell({ initialTab = 'gerencia' }: { initialTab?: Tab
   // que una ruta propia (app/pyg) monte este mismo shell con otra pestaña activa
   // sin duplicar el sidebar.
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
+  const usuario = useUsuario();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Búsqueda prefijada al saltar de Cartera → Clientes (link "Ver cliente").
   const [clientesSearch, setClientesSearch] = useState('');
@@ -148,18 +151,17 @@ export default function AppShell({ initialTab = 'gerencia' }: { initialTab?: Tab
         </nav>
 
         <div className="border-t border-line px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-soft text-xs font-semibold text-accent">
-              DC
-            </div>
-            <div>
-              <p className="text-sm font-medium text-ink">Administrador</p>
-              <div className="mt-0.5 flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-                <span className="text-xs text-ink-muted">Conectado</span>
-              </div>
-            </div>
-          </div>
+          <p className="truncate text-sm font-medium text-ink" title={usuario?.email}>
+            {usuario?.email || 'Sesión activa'}
+          </p>
+          <form action={logout} className="mt-2">
+            <button
+              type="submit"
+              className="text-xs text-ink-muted underline-offset-2 transition-colors hover:text-ink hover:underline"
+            >
+              Cerrar sesión
+            </button>
+          </form>
         </div>
       </aside>
 
