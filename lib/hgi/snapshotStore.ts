@@ -1,4 +1,12 @@
-import { getSql as getDb } from '../pg';
+import { getSql as getDb, conTimeout } from '../pg';
+
+/**
+ * Topes de las queries del snapshot (ver conTimeout en lib/pg.ts). Generosos:
+ * el snapshot de ventas pesa ~2 MB. Existen para que un cuelgue de la conexión
+ * falle en segundos y no a los 300 s del maxDuration del cron.
+ */
+const LECTURA_MS = 20_000;
+const ESCRITURA_MS = 60_000;
 
 /**
  * Caché read-through generalizada en Postgres (tabla keyed-by-dataset).
@@ -54,9 +62,11 @@ export async function readSnapshot<T>(dataset: Dataset): Promise<Snapshot<T> | n
   const sql = getDb();
   // postgres.js decodifica timestamptz a Date (el driver de Neon devolvía string).
   // new Date(...) acepta ambos, pero el tipo refleja lo que llega de verdad.
-  const rows = (await sql`
-    SELECT data, built_at, source_counts FROM hgi_snapshot WHERE dataset = ${dataset}
-  `) as unknown as Array<{ data: unknown; built_at: string | Date | null; source_counts: unknown }>;
+  const rows = (await conTimeout(
+    sql`SELECT data, built_at, source_counts FROM hgi_snapshot WHERE dataset = ${dataset}`,
+    LECTURA_MS,
+    `readSnapshot(${dataset})`,
+  )) as unknown as Array<{ data: unknown; built_at: string | Date | null; source_counts: unknown }>;
 
   const row = rows[0];
   if (!row || !row.data || !row.built_at || !Array.isArray(row.data)) return null;
@@ -137,7 +147,7 @@ export async function writeSnapshot<T>(
   // Se escribe si no había nada que preservar (nulo / no-array / 0 filas) o si la
   // data nueva alcanza el ratio mínimo sobre la existente.
   const ratio = ratioMinimo();
-  const rows = (await sql`
+  const rows = (await conTimeout(sql`
     INSERT INTO hgi_snapshot (dataset, data, built_at, source_counts)
     VALUES (${dataset}, ${sql.json(data as never)}, NOW(), ${sql.json(sourceCounts as never)})
     ON CONFLICT (dataset) DO UPDATE
@@ -150,7 +160,7 @@ export async function writeSnapshot<T>(
          OR jsonb_array_length(EXCLUDED.data)::numeric
             >= ${ratio}::numeric * jsonb_array_length(hgi_snapshot.data)::numeric
     RETURNING built_at
-  `) as unknown as Array<{ built_at: string | Date }>;
+  `, ESCRITURA_MS, `writeSnapshot(${dataset})`)) as unknown as Array<{ built_at: string | Date }>;
 
   if (rows.length === 0) {
     // Rechazado por el guard. Se relee el conteo sólo en este camino (raro) para

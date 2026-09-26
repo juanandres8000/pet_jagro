@@ -42,11 +42,11 @@ async function catalogoLookup(): Promise<Map<string, CatalogoInfo>> {
 export async function buildPedidosSnapshot(): Promise<BuildResult<Pedido>> {
   await getValidToken(); // prime del token cacheado
 
-  // Reporte de pedidos (HGINet) + catálogo (Neon) en paralelo.
-  const [raw, catalogo] = await Promise.all([
-    hgiGet<HgiPedidoFila[]>('Documentos', 'ObtenerPedidoPendienteReporte', PARAMS),
-    catalogoLookup(),
-  ]);
+  // Catálogo (Postgres) y DESPUÉS el reporte (HGINet), en serie. En paralelo,
+  // readSnapshot competía con la lectura/renovación del token dentro de hgiGet
+  // sobre la única conexión del pooler y colgaba el cron (trampa 2, CLAUDE.md).
+  const catalogo = await catalogoLookup();
+  const raw = await hgiGet<HgiPedidoFila[]>('Documentos', 'ObtenerPedidoPendienteReporte', PARAMS);
 
   const filas = Array.isArray(raw) ? raw.length : 0;
   const pedidos = mapPedidos(raw, catalogo);

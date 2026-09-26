@@ -19,6 +19,12 @@ import { readToken, writeToken, clearToken, type StoredToken } from './tokenStor
 
 const AUTH_TIMEOUT_MS = 10_000;
 const REQ_TIMEOUT_MS = 15_000;
+/**
+ * Tope para descargar el CUERPO una vez llegaron las cabeceras. Aparte del de
+ * cabeceras porque respuestas legítimas tardan más en bajar que en empezar
+ * (Productos/Obtener > 15 s). Muy por debajo del maxDuration de 300 s del cron.
+ */
+const BODY_TIMEOUT_MS = 120_000;
 // Margen de seguridad: si al token le quedan menos de esto, lo renovamos.
 const EXPIRY_SKEW_MS = 5 * 60 * 1000;
 
@@ -149,13 +155,33 @@ function isHgiErrorPayload(x: unknown): x is HgiErrorPayload {
   );
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+interface Respuesta {
+  status: number;
+  ok: boolean;
+  /** Cuerpo completo, leído dentro del mismo timeout. */
+  body: string;
+}
+
+/**
+ * GET con timeout en las dos fases: `timeoutMs` hasta las cabeceras y
+ * BODY_TIMEOUT_MS para descargar el cuerpo.
+ *
+ * Antes el timer se limpiaba en cuanto llegaban las cabeceras y `res.json()` /
+ * `res.text()` quedaban sin límite: si HGINet mandaba cabeceras y se quedaba
+ * callado, la lectura del cuerpo esperaba hasta el maxDuration del cron.
+ */
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Respuesta> {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  let timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     // cache: 'no-store' obligatorio: Next.js cachea fetch por defecto. Sin esto,
     // las respuestas de HGINet (auth y datos) se servirían obsoletas.
-    return await fetch(url, { ...init, cache: 'no-store', signal: ctrl.signal });
+    const res = await fetch(url, { ...init, cache: 'no-store', signal: ctrl.signal });
+    clearTimeout(timer);
+    // El mismo signal aborta también la lectura del stream del cuerpo.
+    timer = setTimeout(() => ctrl.abort(), BODY_TIMEOUT_MS);
+    const body = await res.text();
+    return { status: res.status, ok: res.ok, body };
   } finally {
     clearTimeout(timer);
   }
@@ -188,7 +214,7 @@ async function authenticate(): Promise<StoredToken | null> {
   // Ruta case-sensitive: /Api/ con mayúscula.
   const url = `${cfg.baseUrl}/Api/Autenticar/?${qs}`;
 
-  let res: Response;
+  let res: Respuesta;
   try {
     res = await fetchWithTimeout(url, { method: 'GET', headers: { Accept: 'application/json' } }, AUTH_TIMEOUT_MS);
   } catch (err) {
@@ -197,7 +223,12 @@ async function authenticate(): Promise<StoredToken | null> {
     throw new Error('No se pudo contactar a HGINet para autenticar');
   }
 
-  const data = (await res.json().catch(() => null)) as AutenticacionRespuesta | null;
+  let data: AutenticacionRespuesta | null = null;
+  try {
+    data = JSON.parse(res.body) as AutenticacionRespuesta;
+  } catch {
+    data = null;
+  }
 
   if (data?.JwtToken) {
     const jwt = data.JwtToken;
@@ -241,12 +272,32 @@ async function invalidateUsedToken(usedJwt: string, motivo: string): Promise<voi
   }
 }
 
+/** Obtención/renovación en vuelo, compartida por las llamadas concurrentes. */
+let enVuelo: Promise<string> | null = null;
+
 /**
  * Devuelve un JWT válido, renovándolo si hace falta.
  * Orden: L1 memoria → Neon → autenticar (con manejo del candado).
+ *
+ * Single-flight: si ya hay una obtención en curso, se espera ESA en vez de
+ * lanzar otra. Los builders llaman a HGINet en paralelo; cuando el token entra
+ * en los últimos EXPIRY_SKEW_MS, la L1 deja de servirlo y cada llamada iba a
+ * Postgres y a /Api/Autenticar a la vez — la lectura concurrente sobre la
+ * conexión única del pooler colgaba el cron hasta el timeout de 300 s.
  */
-export async function getValidToken(): Promise<string> {
-  // a) L1 en memoria
+export function getValidToken(): Promise<string> {
+  const mem = memValid();
+  if (mem) return Promise.resolve(mem.jwt);
+  if (!enVuelo) {
+    enVuelo = obtenerToken().finally(() => {
+      enVuelo = null;
+    });
+  }
+  return enVuelo;
+}
+
+async function obtenerToken(): Promise<string> {
+  // a) L1 en memoria (otra llamada pudo renovarlo mientras se esperaba)
   const mem = memValid();
   if (mem) return mem.jwt;
 
@@ -325,7 +376,7 @@ async function hgiGetInternal<T>(
   // Ruta case-sensitive con /Api/ y barra final.
   const url = `${cfg.baseUrl}/Api/${recurso}/${metodo}/${query ? `?${query}` : ''}`;
 
-  let res: Response;
+  let res: Respuesta;
   try {
     res = await fetchWithTimeout(
       url,
@@ -345,7 +396,7 @@ async function hgiGetInternal<T>(
 
   // Se lee el cuerpo como texto (una sola vez) para distinguir dos clases de 400:
   // el de token caducado y el de error real.
-  const rawBody = await res.text();
+  const rawBody = res.body;
 
   // HGINet responde 400 con CUERPO VACÍO cuando el token caducó server-side
   // (síntoma distinto del 401, pero misma causa: el token dejó de valer). Se le

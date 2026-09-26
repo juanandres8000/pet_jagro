@@ -1,4 +1,24 @@
-import { getSql as getDb } from '../pg';
+import { getSql as getDb, conTimeout } from '../pg';
+
+/** Tope de cada query del store: son lecturas/escrituras de una fila. */
+const QUERY_MS = 10_000;
+
+/**
+ * Cola en serie para TODAS las queries del token dentro del proceso.
+ *
+ * El cliente es `max: 1` sobre el pooler en transaction mode: dos queries a la
+ * vez sobre esa conexión la cuelgan sin error (trampa 2 del pooler, CLAUDE.md).
+ * Los builders llaman a HGINet en paralelo (ventas 2, recaudo 12, catalog y
+ * clients con Promise.all) y cada llamada puede leer, renovar o invalidar el
+ * token — p.ej. dos 401 simultáneos invalidaban a la vez. Con la cola, nunca hay
+ * dos queries del token en vuelo.
+ */
+let cola: Promise<unknown> = Promise.resolve();
+function enSerie<T>(fn: () => Promise<T>): Promise<T> {
+  const r = cola.then(fn, fn);
+  cola = r.catch(() => {});
+  return r;
+}
 
 /**
  * Caché/candado compartido del token de HGINet en Postgres (Supabase).
@@ -53,31 +73,41 @@ async function crearTabla(): Promise<void> {
 }
 
 /** Lee el token cacheado. Devuelve null si no hay token guardado. */
-export async function readToken(): Promise<StoredToken | null> {
-  await ensureTokenTable();
-  const sql = getDb();
-  // timestamptz llega como Date con postgres.js (el driver de Neon devolvía string).
-  const rows = (await sql`
-    SELECT jwt, expires_at FROM hgi_token WHERE id = 1
-  `) as unknown as Array<{ jwt: string | null; expires_at: string | Date | null }>;
+export function readToken(): Promise<StoredToken | null> {
+  return enSerie(async () => {
+    await ensureTokenTable();
+    const sql = getDb();
+    // timestamptz llega como Date con postgres.js (el driver de Neon devolvía string).
+    const rows = (await conTimeout(
+      sql`SELECT jwt, expires_at FROM hgi_token WHERE id = 1`,
+      QUERY_MS,
+      'readToken',
+    )) as unknown as Array<{ jwt: string | null; expires_at: string | Date | null }>;
 
-  const row = rows[0];
-  if (!row || !row.jwt || !row.expires_at) return null;
-  return { jwt: row.jwt, expiresAt: new Date(row.expires_at) };
+    const row = rows[0];
+    if (!row || !row.jwt || !row.expires_at) return null;
+    return { jwt: row.jwt, expiresAt: new Date(row.expires_at) };
+  });
 }
 
 /** Guarda (upsert) el token en la fila única de Neon. */
-export async function writeToken(jwt: string, expiresAt: Date): Promise<void> {
-  await ensureTokenTable();
-  const sql = getDb();
-  await sql`
-    INSERT INTO hgi_token (id, jwt, expires_at, updated_at)
-    VALUES (1, ${jwt}, ${expiresAt.toISOString()}, NOW())
-    ON CONFLICT (id) DO UPDATE
-      SET jwt = EXCLUDED.jwt,
-          expires_at = EXCLUDED.expires_at,
-          updated_at = NOW()
-  `;
+export function writeToken(jwt: string, expiresAt: Date): Promise<void> {
+  return enSerie(async () => {
+    await ensureTokenTable();
+    const sql = getDb();
+    await conTimeout(
+      sql`
+        INSERT INTO hgi_token (id, jwt, expires_at, updated_at)
+        VALUES (1, ${jwt}, ${expiresAt.toISOString()}, NOW())
+        ON CONFLICT (id) DO UPDATE
+          SET jwt = EXCLUDED.jwt,
+              expires_at = EXCLUDED.expires_at,
+              updated_at = NOW()
+      `,
+      QUERY_MS,
+      'writeToken',
+    );
+  });
 }
 
 /**
@@ -98,14 +128,20 @@ export async function writeToken(jwt: string, expiresAt: Date): Promise<void> {
  * @returns `true` si invalidó; `false` si otro lambda ya rotó el token (la fila
  * ya tiene uno más nuevo, así que no hay nada que invalidar).
  */
-export async function clearToken(failedJwt: string): Promise<boolean> {
-  await ensureTokenTable();
-  const sql = getDb();
-  const rows = (await sql`
-    UPDATE hgi_token
-       SET jwt = NULL, expires_at = NULL, updated_at = NOW()
-     WHERE id = 1 AND jwt = ${failedJwt}
-    RETURNING id
-  `) as unknown as Array<{ id: number }>;
-  return rows.length > 0;
+export function clearToken(failedJwt: string): Promise<boolean> {
+  return enSerie(async () => {
+    await ensureTokenTable();
+    const sql = getDb();
+    const rows = (await conTimeout(
+      sql`
+        UPDATE hgi_token
+           SET jwt = NULL, expires_at = NULL, updated_at = NOW()
+         WHERE id = 1 AND jwt = ${failedJwt}
+        RETURNING id
+      `,
+      QUERY_MS,
+      'clearToken',
+    )) as unknown as Array<{ id: number }>;
+    return rows.length > 0;
+  });
 }
