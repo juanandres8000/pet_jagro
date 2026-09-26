@@ -120,6 +120,38 @@ Detalle a limpiar en esa migración: el quick chip "¿Pedidos para zona Norte?"
 - Se actualiza al dar feedback
 - Tooltip muestra total de valoraciones
 
+## Autenticación (Supabase Auth)
+
+- `middleware.ts` exige sesión en todo: páginas → `/login?next=`, `app/api/*` →
+  401 JSON. Públicas: `/login`, `/auth/*` y `/api/hgi/refresh` (crons, sólo
+  `CRON_SECRET` / `x-hgi-refresh-secret`).
+- Login y logout: server actions en `app/(auth)/login/actions.ts`. Cierre por
+  inactividad a los 30 min: `components/inactivity-guard.tsx`.
+- **Registro público deshabilitado.** Sólo entra quien tenga cuenta.
+
+### Usuarios e invitaciones
+Los usuarios se crean con **Authentication → Users → "Invite user"**. El correo
+lleva a `/auth/callback`, que abre sesión y manda a `/auth/definir-contrasena`;
+al guardar entra a `/`. Enlace inválido o vencido → `/login?error=enlace`.
+
+Configuración que vive en el dashboard de Supabase (no en el repo):
+
+1. **Authentication → URL Configuration**
+   - Site URL: `https://pet-jagro.vercel.app`
+   - Redirect URLs: `https://pet-jagro.vercel.app/auth/callback` y
+     `http://localhost:3066/auth/callback`
+2. **Authentication → Emails → plantillas "Invite user" y "Reset password"**:
+   el enlace debe ser
+   `{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=invite`
+   (y `type=recovery` en la de reset). **No usar `{{ .ConfirmationURL }}`**: con
+   la plantilla por defecto Supabase devuelve los tokens en el `#hash` de la URL
+   (flujo implícito), que el servidor no ve, y la invitación termina en el login
+   sin sesión. PKCE (`?code=`) tampoco sirve para invitaciones: las inicia el
+   administrador, así que no hay `code_verifier` en el navegador del invitado.
+   El callback acepta `?code=` sólo para flujos que inicie la propia app.
+3. **Authentication → Sessions**: `sessions_inactivity_timeout = 1800` (el
+   guard del cliente no corre con la pestaña cerrada).
+
 ## Base de Datos (Supabase PostgreSQL)
 
 Proyecto Supabase `pet-jagro` (ref `fxsbraeqgxlcdlpwtgdr`, región `us-east-1`,
@@ -302,6 +334,18 @@ endpoint caído se queda roto hasta que alguien lo note.
 
 Los datasets `__test_*` no están en el tipo `Dataset` ni en `ALL`, así que ningún
 cron los toca y no aparecen en ninguna vista.
+
+### RLS en public: activado, sin policies (migrations/010_rls_public.sql)
+Todas las tablas de `public` tienen RLS **sin policies**: `anon` y
+`authenticated` (lo que expone PostgREST con la anon key) no ven ni escriben
+nada. La app no se entera porque se conecta por `DATABASE_URL` como `postgres`,
+dueño de las tablas y con `BYPASSRLS` — por eso NO se usa `FORCE ROW LEVEL
+SECURITY`. Las vistas (`pyg_mensual`, `pyg_saldo_cuenta`) llevan
+`security_invoker = true`: sin eso corren como su dueño y filtran las tablas.
+
+**Tabla o vista nueva en public ⇒ su `ENABLE ROW LEVEL SECURITY` (o
+`security_invoker`) en la misma migración.** Los `ensureTable` crean tablas sin
+RLS.
 
 ### Trampas del pooler
 
