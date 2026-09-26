@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import { useUsuario } from '@/components/UsuarioContext';
+import { InactivityCountdown } from '@/components/inactivity-guard';
 import { logout } from '@/app/(auth)/login/actions';
 import GerenciaView from '@/components/GerenciaView';
 import PygView from '@/components/PygView';
@@ -154,6 +155,10 @@ export default function AppShell({ initialTab = 'gerencia' }: { initialTab?: Tab
           <p className="truncate text-sm font-medium text-ink" title={usuario?.email}>
             {usuario?.email || 'Sesión activa'}
           </p>
+          <div className="mt-2 flex items-center gap-2 text-xs text-ink-muted">
+            <span>Cierre por inactividad en</span>
+            <InactivityCountdown />
+          </div>
           <form action={logout} className="mt-2">
             <button
               type="submit"
@@ -180,7 +185,7 @@ export default function AppShell({ initialTab = 'gerencia' }: { initialTab?: Tab
             <Image src="/jotagro-logo.png" alt="J Agro" width={32} height={21} className="object-contain" />
             <span className="font-serif text-base font-semibold text-ink">J Agro</span>
           </div>
-          <div className="w-9" />
+          <InactivityCountdown />
         </div>
 
         <div className="flex-1 px-4 py-8 sm:px-8 lg:px-12">

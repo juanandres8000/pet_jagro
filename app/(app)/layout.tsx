@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { UsuarioProvider } from '@/components/UsuarioContext';
+import { InactivityGuard } from '@/components/inactivity-guard';
 
 /**
  * Layout de toda la app autenticada (/ y /pyg). El middleware ya bloquea sin
@@ -13,5 +14,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
-  return <UsuarioProvider usuario={{ email: user.email ?? '' }}>{children}</UsuarioProvider>;
+  return (
+    <UsuarioProvider usuario={{ email: user.email ?? '' }}>
+      <InactivityGuard>{children}</InactivityGuard>
+    </UsuarioProvider>
+  );
 }
