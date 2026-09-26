@@ -167,16 +167,28 @@ function reporteZonas(zonas: VentaPorZona[], neta: number, vendedoresSinZona: Ma
   for (const c of sin?.clientes ?? []) log(`   cliente en ${ZONA_SIN}: ${c.nit} ${c.nombre} · ${fmt(c.venta)} · ${c.documentos} docs`);
 }
 
+interface Guardado {
+  venta: number;
+  descuento: number;
+  por_zona: VentaPorZona[] | null;
+  built_at: Date;
+  hasta: string;
+}
+
+/** Fila guardada del mes. Se lee ANTES de writeMes: después sólo se vería a sí misma. */
+async function leerGuardado(mes: string): Promise<Guardado | undefined> {
+  const rows = (await getSql()`
+    SELECT venta, descuento, por_zona, built_at, hasta FROM hgi_ventas_mensual WHERE mes = ${mes}
+  `) as unknown as Guardado[];
+  return rows[0];
+}
+
 /**
  * Antes/después contra la fila guardada: la venta neta del mes no depende de
  * cómo se agrupe la zona. En el mes en curso puede moverse por facturas nuevas
  * entre el built_at guardado y esta corrida; por eso se imprime el built_at.
  */
-async function baseline(mes: string, neta: number, zonas: VentaPorZona[]) {
-  const rows = (await getSql()`
-    SELECT venta, descuento, por_zona, built_at, hasta FROM hgi_ventas_mensual WHERE mes = ${mes}
-  `) as unknown as Array<{ venta: number; descuento: number; por_zona: VentaPorZona[] | null; built_at: Date; hasta: string }>;
-  const f = rows[0];
+function baseline(f: Guardado | undefined, neta: number, zonas: VentaPorZona[]) {
   if (!f) return log('   baseline: no hay fila guardada para el mes');
   const netaAntes = Number(f.venta) - Number(f.descuento);
   const zonaAntes = (f.por_zona ?? []).reduce((s, z) => s + z.venta, 0);
@@ -233,11 +245,12 @@ async function main() {
         continue;
       }
 
+      const guardado = await leerGuardado(mes);
       if (!DRY) await writeMes(fila);
       ok++;
       log(`${resumen} · OK${DRY ? ' (dry, no escrito)' : ''}`);
       reporteZonas(fila.porZona ?? [], neta, vendedoresSinZona);
-      await baseline(mes, neta, fila.porZona ?? []);
+      baseline(guardado, neta, fila.porZona ?? []);
     } catch (err) {
       fallos++;
       const seg = ((Date.now() - t0) / 1000).toFixed(1);
