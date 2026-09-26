@@ -303,6 +303,18 @@ endpoint caído se queda roto hasta que alguien lo note.
 Los datasets `__test_*` no están en el tipo `Dataset` ni en `ALL`, así que ningún
 cron los toca y no aparecen en ninguna vista.
 
+### RLS en public: activado, sin policies (migrations/010_rls_public.sql)
+Todas las tablas de `public` tienen RLS **sin policies**: `anon` y
+`authenticated` (lo que expone PostgREST con la anon key) no ven ni escriben
+nada. La app no se entera porque se conecta por `DATABASE_URL` como `postgres`,
+dueño de las tablas y con `BYPASSRLS` — por eso NO se usa `FORCE ROW LEVEL
+SECURITY`. Las vistas (`pyg_mensual`, `pyg_saldo_cuenta`) llevan
+`security_invoker = true`: sin eso corren como su dueño y filtran las tablas.
+
+**Tabla o vista nueva en public ⇒ su `ENABLE ROW LEVEL SECURITY` (o
+`security_invoker`) en la misma migración.** Los `ensureTable` crean tablas sin
+RLS.
+
 ### Trampas del pooler
 
 Las dos son consecuencia directa de `max: 1` + pooler en *transaction mode*. Las
