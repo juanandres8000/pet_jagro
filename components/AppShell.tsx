@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { useUsuario } from '@/components/UsuarioContext';
 import { InactivityCountdown } from '@/components/inactivity-guard';
 import { logout } from '@/app/(auth)/login/actions';
@@ -159,14 +160,22 @@ export default function AppShell({ initialTab = 'gerencia' }: { initialTab?: Tab
             <span>Cierre por inactividad en</span>
             <InactivityCountdown />
           </div>
-          <form action={logout} className="mt-2">
-            <button
-              type="submit"
+          <div className="mt-2 flex items-center gap-3">
+            <Link
+              href="/cuenta/contrasena"
               className="text-xs text-ink-muted underline-offset-2 transition-colors hover:text-ink hover:underline"
             >
-              Cerrar sesión
-            </button>
-          </form>
+              Cambiar contraseña
+            </Link>
+            <form action={logout} className="flex">
+              <button
+                type="submit"
+                className="text-xs text-ink-muted underline-offset-2 transition-colors hover:text-ink hover:underline"
+              >
+                Cerrar sesión
+              </button>
+            </form>
+          </div>
         </div>
       </aside>
 

@@ -95,6 +95,8 @@ input:focus, select:focus, textarea:focus {
   --jl-accent-ink: #0b7a6d;
   --jl-danger: #b42318;
   --jl-danger-soft: #fef3f2;
+  --jl-success: #067647;
+  --jl-success-soft: #ecfdf3;
   /* El panel de marca es oscuro en los dos temas. */
   --jl-panel-bg: #0b0f14;
   --jl-panel-fg: #e6edf3;
@@ -118,6 +120,8 @@ input:focus, select:focus, textarea:focus {
     --jl-accent-ink: #2dd4bf;
     --jl-danger: #fda29b;
     --jl-danger-soft: #2a1215;
+    --jl-success: #75e0a7;
+    --jl-success-soft: #0d2a1c;
   }
 }
 
