@@ -25,8 +25,8 @@ const CONFIANZA = [
 /**
  * Pantalla de acceso JumpLight: barra de producto, panel de marca oscuro con las
  * garantías (banda superior en < md) y una card a la derecha. La comparten
- * /login y /auth/definir-contrasena. Va dentro de app/(auth)/layout.tsx, que
- * pone el scope .jl-login y Geist.
+ * /login, /auth/definir-contrasena y /cuenta/contrasena. Va dentro de un layout
+ * que pone el scope .jl-login y Geist (app/(auth)/layout.tsx o app/(app)/cuenta/layout.tsx).
  */
 export function JumpLightSplit({
   titulo,
