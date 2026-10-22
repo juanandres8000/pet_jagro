@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { PageHeader, SectionTitle, KpiCard, Card, Th, EmptyState, FilterButton } from '@/components/ui';
 import { formatPrice, formatMillones, kpiMoney } from '@/lib/format';
 
@@ -19,6 +19,18 @@ const pctFmt = (v: number) => `${(v * 100).toFixed(1)}%`;
 const miles = (n: number) => n.toLocaleString('es-CO', { maximumFractionDigits: 0 });
 const mesAbr = (mes: string) => MESES_CORTO[Number(mes.slice(5, 7)) - 1] ?? mes;
 const mesCorto = (mes: string) => `${mesAbr(mes)} ${mes.slice(0, 4)}`;
+/** Millones con un decimal y sin "$": "33,7". Para las columnas por mes, que no caben con el valor completo. */
+const millones = (v: number) => (v / 1_000_000).toLocaleString('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+/**
+ * Responsive. El contenido tope es max-w-6xl y desde lg el sidebar come 256 px:
+ * diez columnas de meses no caben hasta 2xl, ni siquiera en millones. Debajo de
+ * 2xl los meses del pareto se ven en la ficha del cliente y los de línea × año
+ * se despliegan tocando la fila. Clases literales: Tailwind purga las interpoladas.
+ */
+const SOLO_LG = 'hidden lg:table-cell';
+const SOLO_SM = 'hidden sm:table-cell';
+const SOLO_2XL = 'hidden 2xl:table-cell';
 /** 'YYYY-MM-DD' → "22 oct 2026". */
 const fechaCorta = (iso: string) => `${Number(iso.slice(8, 10))} ${mesAbr(iso)} ${iso.slice(0, 4)}`;
 
@@ -83,9 +95,13 @@ function ZonasResumen({ data, zonaSel, onZona }: { data: Resumen; zonaSel: strin
             <Th>Zona</Th>
             <Th align="right">Venta neta</Th>
             <Th align="right">% del total</Th>
-            <Th align="right">Clientes</Th>
-            <Th align="right">Hacen el 80 %</Th>
-            <Th className="w-1/3" />
+            <Th align="right" className={SOLO_SM}>
+              Clientes
+            </Th>
+            <Th align="right" className={SOLO_SM}>
+              Hacen el 80 %
+            </Th>
+            <Th className={`w-1/3 ${SOLO_SM}`} />
           </tr>
         </thead>
         <tbody>
@@ -104,9 +120,9 @@ function ZonasResumen({ data, zonaSel, onZona }: { data: Resumen; zonaSel: strin
                 <td className="tabular whitespace-nowrap px-4 py-2 text-right text-ink-muted">
                   {todas ? pctFmt(todas.venta === 0 ? 0 : z.venta / todas.venta) : '—'}
                 </td>
-                <td className="tabular whitespace-nowrap px-4 py-2 text-right text-ink-muted">{miles(z.clientes)}</td>
-                <td className="tabular whitespace-nowrap px-4 py-2 text-right text-ink-muted">{miles(z.clientes80)}</td>
-                <td className="px-4 py-2">
+                <td className={`tabular whitespace-nowrap px-4 py-2 text-right text-ink-muted ${SOLO_SM}`}>{miles(z.clientes)}</td>
+                <td className={`tabular whitespace-nowrap px-4 py-2 text-right text-ink-muted ${SOLO_SM}`}>{miles(z.clientes80)}</td>
+                <td className={`px-4 py-2 ${SOLO_SM}`}>
                   <div className="h-2 rounded bg-surface-muted">
                     <div className="h-2 rounded bg-accent" style={{ width: `${Math.max(0, (z.venta / max) * 100)}%` }} />
                   </div>
@@ -126,9 +142,9 @@ function ZonasResumen({ data, zonaSel, onZona }: { data: Resumen; zonaSel: strin
               <td className="px-4 py-2">{todas.zona}</td>
               <td className="tabular whitespace-nowrap px-4 py-2 text-right">{formatPrice(todas.venta)}</td>
               <td className="tabular whitespace-nowrap px-4 py-2 text-right">100,0%</td>
-              <td className="tabular whitespace-nowrap px-4 py-2 text-right">{miles(todas.clientes)}</td>
-              <td className="tabular whitespace-nowrap px-4 py-2 text-right">{miles(todas.clientes80)}</td>
-              <td />
+              <td className={`tabular whitespace-nowrap px-4 py-2 text-right ${SOLO_SM}`}>{miles(todas.clientes)}</td>
+              <td className={`tabular whitespace-nowrap px-4 py-2 text-right ${SOLO_SM}`}>{miles(todas.clientes80)}</td>
+              <td className={SOLO_SM} />
             </tr>
           </tfoot>
         )}
@@ -183,7 +199,7 @@ function ParetoZona({
             className="min-w-[16rem] rounded border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-faint"
           />
         </label>
-        <p className="text-xs text-ink-faint">Clic en un cliente para ver sus compras por mes y por línea.</p>
+        <p className="text-xs text-ink-faint">Haga clic en un cliente para ver sus compras por mes y por línea.</p>
       </div>
       <div className={`max-h-[560px] overflow-auto transition-opacity ${cargando ? 'opacity-50' : ''}`}>
         <table className="w-full text-sm">
@@ -192,10 +208,14 @@ function ParetoZona({
               <Th>#</Th>
               <Th>Cliente</Th>
               <Th align="right">Venta neta</Th>
-              <Th align="right">% zona</Th>
-              <Th align="right">% acum.</Th>
+              <Th align="right" className={SOLO_LG}>
+                % zona
+              </Th>
+              <Th align="right" className={SOLO_LG}>
+                % acum.
+              </Th>
               {meses.map((m) => (
-                <Th key={m} align="right">
+                <Th key={m} align="right" className={SOLO_2XL}>
                   {mesAbr(m)}
                 </Th>
               ))}
@@ -218,20 +238,28 @@ function ParetoZona({
                   </td>
                   <td className="px-4 py-2">
                     <div
-                      className={`max-w-[18rem] truncate ${activo ? 'font-medium text-accent' : en80 ? 'text-ink' : 'text-ink-muted'}`}
+                      className={`max-w-[7rem] truncate sm:max-w-[18rem] lg:max-w-[12rem] 2xl:max-w-[10rem] ${activo ? 'font-medium text-accent' : en80 ? 'text-ink' : 'text-ink-muted'}`}
                       title={`${c.nombre} · ${c.nit}`}
                     >
                       {c.nombre}
                     </div>
                   </td>
                   <td className="tabular whitespace-nowrap px-4 py-2 text-right text-ink">{formatPrice(c.venta)}</td>
-                  <td className="tabular whitespace-nowrap px-4 py-2 text-right text-ink-muted">{pctFmt(c.pct)}</td>
-                  <td className={`tabular whitespace-nowrap px-4 py-2 text-right ${en80 ? 'font-medium text-accent' : 'text-ink-muted'}`}>
+                  <td className={`tabular whitespace-nowrap px-4 py-2 text-right text-ink-muted ${SOLO_LG}`}>{pctFmt(c.pct)}</td>
+                  <td
+                    className={`tabular whitespace-nowrap px-4 py-2 text-right ${SOLO_LG} ${
+                      en80 ? 'font-medium text-accent' : 'text-ink-muted'
+                    }`}
+                  >
                     {pctFmt(c.pctAcum)}
                   </td>
                   {c.porMes.map((v, j) => (
-                    <td key={j} className="tabular whitespace-nowrap px-4 py-2 text-right text-ink-muted">
-                      {v === 0 ? <span className="text-ink-faint">—</span> : formatPrice(v)}
+                    <td
+                      key={j}
+                      title={formatPrice(v)}
+                      className={`tabular whitespace-nowrap px-2 py-2 text-right text-ink-muted ${SOLO_2XL}`}
+                    >
+                      {v === 0 ? <span className="text-ink-faint">—</span> : millones(v)}
                     </td>
                   ))}
                 </tr>
@@ -244,13 +272,113 @@ function ParetoZona({
       <div className="border-t border-line px-4 py-3 text-xs text-ink-faint">
         <span className="mr-1 inline-block h-2.5 w-0.5 bg-accent align-middle" /> Clientes que hacen el 80 % de la venta de la
         zona; la línea marca el corte. La zona es la del vendedor que facturó: un cliente atendido por dos vendedores aparece
-        en ambas zonas y una sola vez en Todas las zonas.
+        en ambas zonas y una sola vez en Todas las zonas.<span className="hidden 2xl:inline"> Meses en millones.</span>
       </div>
     </div>
   );
 }
 
 // ---- Consulta por cliente ----
+
+/**
+ * Cabecera de la tabla de líneas. No usa <Th>: su px-4 fijo no deja el padding
+ * compacto que hace falta para caber en 390 px.
+ */
+const TH_LINEA = 'px-2 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted sm:px-4';
+const TD_LINEA = 'tabular whitespace-nowrap px-2 py-2 text-right sm:px-4';
+
+/**
+ * Línea de producto × año. Desde 2xl, una columna por mes (en millones). Debajo,
+ * línea, venta, % y unidades; los meses se despliegan tocando la fila.
+ */
+function TablaLineas({ lineas, meses, total }: { lineas: ClienteResp['lineas']; meses: string[]; total: number }) {
+  const [abiertas, setAbiertas] = useState<Set<string>>(new Set());
+  const alternar = (linea: string) =>
+    setAbiertas((prev) => {
+      const sig = new Set(prev);
+      if (sig.has(linea)) sig.delete(linea);
+      else sig.add(linea);
+      return sig;
+    });
+  const columnas = 4;
+
+  return (
+    <table className="w-full text-xs sm:text-sm">
+      <thead className="bg-surface-muted">
+        <tr>
+          <th className={`${TH_LINEA} text-left`}>Línea</th>
+          <th className={`${TH_LINEA} text-right`}>Venta neta</th>
+          <th className={`${TH_LINEA} text-right`}>%</th>
+          <th className={`${TH_LINEA} text-right`}>
+            <span className="sm:hidden">Unid.</span>
+            <span className="hidden sm:inline">Unidades</span>
+          </th>
+          {meses.map((m) => (
+            <th key={m} className={`${TH_LINEA} text-right ${SOLO_2XL}`}>
+              {mesAbr(m)}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {lineas.map((l) => {
+          const abierta = abiertas.has(l.linea);
+          return (
+            <Fragment key={l.linea}>
+              <tr
+                onClick={() => alternar(l.linea)}
+                aria-expanded={abierta}
+                className="cursor-pointer border-t border-line hover:bg-surface-hover 2xl:cursor-default"
+              >
+                <td className="px-2 py-2 text-ink sm:px-4">
+                  <span className="mr-1 inline-block w-3 text-ink-faint 2xl:hidden">{abierta ? '▾' : '▸'}</span>
+                  {l.linea}
+                </td>
+                <td className={`${TD_LINEA} text-ink`}>{formatPrice(l.venta)}</td>
+                <td className={`${TD_LINEA} text-ink-muted`}>{pctFmt(total === 0 ? 0 : l.venta / total)}</td>
+                <td className={`${TD_LINEA} text-ink-muted`}>{miles(l.unidades)}</td>
+                {l.porMes.map((v, j) => (
+                  <td key={j} title={formatPrice(v)} className={`${TD_LINEA} text-ink-muted ${SOLO_2XL}`}>
+                    {v === 0 ? <span className="text-ink-faint">—</span> : millones(v)}
+                  </td>
+                ))}
+              </tr>
+              {abierta && (
+                <tr className="bg-cream 2xl:hidden">
+                  <td colSpan={columnas} className="px-2 py-3 sm:px-4">
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-5">
+                      {meses.map((m, j) => (
+                        <div key={m} className="flex justify-between gap-2">
+                          <dt className="text-ink-muted">{mesAbr(m)}</dt>
+                          <dd className="tabular text-ink">
+                            {l.porMes[j] === 0 ? <span className="text-ink-faint">—</span> : formatPrice(l.porMes[j])}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          );
+        })}
+      </tbody>
+      <tfoot>
+        <tr className="border-t-2 border-line font-semibold text-ink">
+          <td className="px-2 py-2 sm:px-4">Total</td>
+          <td className={TD_LINEA}>{formatPrice(total)}</td>
+          <td className={TD_LINEA}>100,0%</td>
+          <td className={TD_LINEA}>{miles(lineas.reduce((s, l) => s + l.unidades, 0))}</td>
+          {meses.map((m, j) => (
+            <td key={m} className={`${TD_LINEA} ${SOLO_2XL}`}>
+              {millones(lineas.reduce((s, l) => s + l.porMes[j], 0))}
+            </td>
+          ))}
+        </tr>
+      </tfoot>
+    </table>
+  );
+}
 
 function FichaCliente({ d, cargando }: { d: ClienteResp | null; cargando: boolean }) {
   if (!d) {
@@ -304,54 +432,12 @@ function FichaCliente({ d, cargando }: { d: ClienteResp | null; cargando: boolea
         {lineas.length === 0 ? (
           <EmptyState title="Sin compras por línea en el año" />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-surface-muted">
-                <tr>
-                  <Th>Línea</Th>
-                  <Th align="right">Venta neta</Th>
-                  <Th align="right">%</Th>
-                  <Th align="right">Unidades</Th>
-                  {meses.map((m) => (
-                    <Th key={m} align="right">
-                      {mesAbr(m)}
-                    </Th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {lineas.map((l) => (
-                  <tr key={l.linea} className="border-t border-line hover:bg-surface-hover">
-                    <td className="whitespace-nowrap px-4 py-2 text-ink">{l.linea}</td>
-                    <td className="tabular whitespace-nowrap px-4 py-2 text-right text-ink">{formatPrice(l.venta)}</td>
-                    <td className="tabular whitespace-nowrap px-4 py-2 text-right text-ink-muted">
-                      {pctFmt(d.totalLineas === 0 ? 0 : l.venta / d.totalLineas)}
-                    </td>
-                    <td className="tabular whitespace-nowrap px-4 py-2 text-right text-ink-muted">{miles(l.unidades)}</td>
-                    {l.porMes.map((v, j) => (
-                      <td key={j} className="tabular whitespace-nowrap px-4 py-2 text-right text-ink-muted">
-                        {v === 0 ? <span className="text-ink-faint">—</span> : formatPrice(v)}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-line font-semibold text-ink">
-                  <td className="px-4 py-2">Total</td>
-                  <td className="tabular whitespace-nowrap px-4 py-2 text-right">{formatPrice(d.totalLineas)}</td>
-                  <td className="tabular whitespace-nowrap px-4 py-2 text-right">100,0%</td>
-                  <td className="tabular whitespace-nowrap px-4 py-2 text-right">
-                    {miles(lineas.reduce((s, l) => s + l.unidades, 0))}
-                  </td>
-                  {meses.map((m, j) => (
-                    <td key={m} className="tabular whitespace-nowrap px-4 py-2 text-right">
-                      {formatPrice(lineas.reduce((s, l) => s + l.porMes[j], 0))}
-                    </td>
-                  ))}
-                </tr>
-              </tfoot>
-            </table>
+          <TablaLineas lineas={lineas} meses={meses} total={d.totalLineas} />
+        )}
+        {lineas.length > 0 && (
+          <div className="border-t border-line px-4 py-3 text-xs text-ink-faint">
+            <span className="2xl:hidden">Toque una línea para ver sus compras por mes.</span>
+            <span className="hidden 2xl:inline">Meses en millones; el valor completo aparece al pasar el cursor.</span>
           </div>
         )}
         {d.lineaSinDato.length > 0 && (
@@ -494,7 +580,7 @@ export default function ComercialView() {
               <FichaCliente d={cliente} cargando={cargandoCliente} />
             ) : (
               <Card>
-                <EmptyState title="Elegí un cliente en la tabla de arriba" hint="Se muestran sus compras por mes y por línea." />
+                <EmptyState title="Seleccione un cliente en la tabla de arriba" hint="Se muestran sus compras por mes y por línea." />
               </Card>
             )}
           </section>
