@@ -15,8 +15,9 @@ import ClientesView from '@/components/ClientesView';
 import CarteraView from '@/components/CarteraView';
 import ComposicionView from '@/components/ComposicionView';
 import VendedoresView from '@/components/VendedoresView';
+import ComercialView from '@/components/ComercialView';
 
-type Tab = 'gerencia' | 'pyg' | 'picking' | 'inventario' | 'catalogo' | 'clientes' | 'cartera' | 'composicion' | 'vendedores';
+type Tab = 'gerencia' | 'pyg' | 'comercial' | 'picking' | 'inventario' | 'catalogo' | 'clientes' | 'cartera' | 'composicion' | 'vendedores';
 
 interface MenuItem {
   id: Tab;
@@ -55,7 +56,10 @@ const MENU_GROUPS: MenuGroup[] = [
   // },
   {
     label: 'Comercial',
-    items: [{ id: 'clientes', label: 'Clientes' }],
+    items: [
+      { id: 'comercial', label: 'Ventas por zona' },
+      { id: 'clientes', label: 'Clientes' },
+    ],
   },
   {
     label: 'Finanzas',
@@ -201,6 +205,7 @@ export default function AppShell({ initialTab = 'gerencia' }: { initialTab?: Tab
           <div className="mx-auto max-w-6xl">
             {activeTab === 'gerencia' && <GerenciaView />}
             {activeTab === 'pyg' && <PygView />}
+            {activeTab === 'comercial' && <ComercialView />}
             {activeTab === 'picking' && <PickingView />}
             {activeTab === 'inventario' && <InventarioView />}
             {activeTab === 'catalogo' && <CatalogoView />}

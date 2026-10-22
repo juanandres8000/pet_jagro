@@ -343,6 +343,56 @@ export function porZona(ls: VentaLinea[]): VentaPorZona[] {
     .sort((a, b) => ordenZona(a.zona) - ordenZona(b.zona));
 }
 
+/**
+ * NIT genérico de HGINet para la venta de mostrador sin cliente identificado
+ * ("VENTAS MOSTRADOR"). No es un cliente: no cuenta en "Clientes activos" ni
+ * entra en los paretos ni en por_cliente_linea.
+ */
+export const NIT_MOSTRADOR_GENERICO = '22222222';
+
+/** Venta de un cliente en una línea de producto, dentro de una zona. Venta neta (regla 3). */
+export interface VentaClienteLinea {
+  zona: string;
+  nit: string;
+  nombre: string;
+  linea: string;
+  venta: number;
+  /** Σ CantidadDocumento; en las notas crédito ya viene negativa. */
+  unidades: number;
+  documentos: number;
+}
+
+/**
+ * Venta por (zona, cliente, línea) del mes, completa y sin límite: alimenta la
+ * consulta por cliente de /comercial. Zona = la del vendedor, como en `porZona`.
+ * Excluye el NIT de mostrador, así que Σ = venta neta − venta de mostrador.
+ */
+export function porClienteLinea(ls: VentaLinea[]): VentaClienteLinea[] {
+  const m = new Map<string, VentaClienteLinea & { docs: Set<string> }>();
+  for (const l of ls) {
+    if (l.nitTercero === NIT_MOSTRADOR_GENERICO) continue;
+    const zona = zonaDeVendedor(l.vendedor);
+    const k = `${zona}\u0000${l.nitTercero}\u0000${l.linea}`;
+    const e = m.get(k) ?? {
+      zona,
+      nit: l.nitTercero,
+      nombre: l.tercero,
+      linea: l.linea,
+      venta: 0,
+      unidades: 0,
+      documentos: 0,
+      docs: new Set<string>(),
+    };
+    e.venta += l.venta;
+    e.unidades += l.cantidad;
+    e.docs.add(l.documento);
+    m.set(k, e);
+  }
+  return [...m.values()]
+    .map(({ docs, ...e }) => ({ ...e, documentos: docs.size }))
+    .sort((a, b) => ordenZona(a.zona) - ordenZona(b.zona) || b.venta - a.venta);
+}
+
 /** Serie diaria ordenada cronológicamente. */
 function porDia(ls: VentaLinea[]): VentaPorDia[] {
   const m = new Map<string, { venta: number; costo: number; docs: Set<string> }>();

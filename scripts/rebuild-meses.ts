@@ -2,7 +2,8 @@
  * Reconstruye meses de hgi_ventas_mensual desde la terminal local, reanudable.
  *
  * ══ CÓMO CORRERLO ═════════════════════════════════════════════════════════
- *   node --env-file=.env.local --import ./scripts/ts-resolve.mjs scripts/rebuild-meses.ts [--dry] [--mes=YYYY-MM]
+ *   node --env-file=.env.local --import ./scripts/ts-resolve.mjs scripts/rebuild-meses.ts \
+ *     [--dry] [--mes=YYYY-MM] [--desde=YYYY-MM] [--hasta=YYYY-MM]
  *
  * Existe porque el backfill sólo corría como cron de Vercel (un mes por hora) y
  * en local `hgiGet` muere en `getConfig()`, que exige HGI_USUARIO/HGI_CLAVE —
@@ -16,12 +17,15 @@
  * `writeMes` que usa el cron.
  *
  * Por mes: construye, verifica Σ por_proveedor = Σ por_zona = Σ clientes de
- * por_zona = venta neta del mes, y SÓLO entonces escribe. Si la verificación
- * falla, el mes se salta y queda intacto.
+ * por_zona = Σ por_cliente_linea + mostrador = venta neta del mes, y SÓLO
+ * entonces escribe. Si la verificación falla, el mes se salta y queda intacto.
+ * (por_cliente_linea excluye el NIT genérico de mostrador; por eso se le suma.)
  *
- * Reanudable: salta los meses cuyo `por_zona` ya está por vendedor ("Zona N",
- * ver lib/hgi/zonas.ts). Los construidos con la regla anterior agrupan por
- * ciudad y se rehacen.
+ * Reanudable: salta los meses que ya tienen `por_cliente_linea` (migración
+ * 011). Ese builder también escribe por_zona por vendedor, así que un mes con
+ * la columna llena tiene todas las dimensiones al día.
+ * `--desde`/`--hasta` acotan el rango (por defecto 2025-01 → 2026-09), que se
+ * recorre del más reciente al más antiguo.
  * `--dry` construye y verifica sin escribir. `--mes=YYYY-MM` procesa sólo ese
  * mes, aunque ya esté hecho.
  * Por mes imprime la distribución por zona, los vendedores sin zona y los
@@ -33,18 +37,26 @@ import { agregarMes, rangoDeMes, mesDe } from '../lib/hgi/ventasMensual';
 import { writeMes } from '../lib/hgi/ventasMensualStore';
 import type { HgiFetch } from '../lib/hgi/pygFetch';
 import { ZONA_SIN, esPorZonaVendedor, zonaDeVendedor } from '../lib/hgi/zonas';
-import type { VentaPorZona } from '../lib/hgi/mappers/ventas';
+import { NIT_MOSTRADOR_GENERICO, type VentaPorZona } from '../lib/hgi/mappers/ventas';
 
-/** 2026-09 → 2025-01, del más reciente al más antiguo. 2024 no se toca. */
-const DESDE = '2025-01';
-const HASTA = '2026-09';
+const arg = (nombre: string) => process.argv.find((a) => a.startsWith(`--${nombre}=`))?.slice(nombre.length + 3);
+const argMes = (nombre: string, def: string) => {
+  const v = arg(nombre) ?? def;
+  if (!/^\d{4}-\d{2}$/.test(v)) throw new Error(`--${nombre} inválido: ${v} (formato YYYY-MM)`);
+  return v;
+};
+
+/** Rango a recorrer, del más reciente al más antiguo. Por defecto 2026-09 → 2025-01; 2024 no se toca. */
+const DESDE = argMes('desde', '2025-01');
+const HASTA = argMes('hasta', '2026-09');
+if (DESDE > HASTA) throw new Error(`--desde (${DESDE}) es posterior a --hasta (${HASTA})`);
 /** Respiro entre meses, además de la pausa entre ventanas de fetchRango. */
 const PAUSA_ENTRE_MESES_MS = 5_000;
 /** Tolerancia de la verificación, en pesos (sumas en coma flotante). */
 const TOLERANCIA = 1;
 
 const DRY = process.argv.includes('--dry');
-const MES = process.argv.find((a) => a.startsWith('--mes='))?.slice('--mes='.length);
+const MES = arg('mes');
 if (MES !== undefined && !/^\d{4}-\d{2}$/.test(MES)) throw new Error(`--mes inválido: ${MES} (formato YYYY-MM)`);
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const fmt = (n: number) => n.toLocaleString('es-CO', { maximumFractionDigits: 0 });
@@ -143,9 +155,9 @@ const fetcherLocal: HgiFetch = async (recurso, metodo, params, opts) => {
 
 async function yaReconstruidos(): Promise<Set<string>> {
   const rows = (await getSql()`
-    SELECT mes, por_zona FROM hgi_ventas_mensual WHERE por_proveedor IS NOT NULL AND por_zona IS NOT NULL
-  `) as unknown as Array<{ mes: string; por_zona: VentaPorZona[] }>;
-  return new Set(rows.filter((r) => esPorZonaVendedor(r.por_zona)).map((r) => r.mes));
+    SELECT mes FROM hgi_ventas_mensual WHERE por_cliente_linea IS NOT NULL
+  `) as unknown as Array<{ mes: string }>;
+  return new Set(rows.map((r) => r.mes));
 }
 
 /** Distribución por zona, vendedores sin zona y clientes que caen en "Sin zona". */
@@ -213,7 +225,7 @@ async function main() {
   for (const [i, mes] of lista.entries()) {
     if (hechos.has(mes)) {
       saltados++;
-      log(`${mes} · SALTADO (ya tiene por_zona por vendedor)`);
+      log(`${mes} · SALTADO (ya tiene por_cliente_linea)`);
       continue;
     }
     if (i > 0) await sleep(PAUSA_ENTRE_MESES_MS);
@@ -232,14 +244,23 @@ async function main() {
       const sZona = (fila.porZona ?? []).reduce((s, z) => s + z.venta, 0);
       const sCli = (fila.porZona ?? []).reduce((s, z) => s + z.clientes.reduce((t, c) => t + c.venta, 0), 0);
       const nCli = (fila.porZona ?? []).reduce((s, z) => s + z.clientes.length, 0);
+      const mostrador = lineas.filter((l) => l.nitTercero === NIT_MOSTRADOR_GENERICO).reduce((s, l) => s + l.venta, 0);
+      const sCliLinea = (fila.porClienteLinea ?? []).reduce((s, c) => s + c.venta, 0);
+      const zonasOk = esPorZonaVendedor(fila.porZona ?? []);
       const seg = ((Date.now() - t0) / 1000).toFixed(1);
       const resumen =
         `${mes} · neta ${fmt(neta)} · ${fila.porProveedor?.length ?? 0} proveedores · ` +
-        `${fila.porZona?.length ?? 0} zonas · ${nCli} clientes · ${fila.lineas} líneas · ${seg}s`;
+        `${fila.porZona?.length ?? 0} zonas · ${nCli} clientes · ${fila.porClienteLinea?.length ?? 0} cliente×línea · ` +
+        `${fila.lineas} líneas · ${seg}s`;
 
-      const difs = { proveedor: sProv - neta, zona: sZona - neta, clientes: sCli - neta };
+      const difs = {
+        proveedor: sProv - neta,
+        zona: sZona - neta,
+        clientes: sCli - neta,
+        clienteLinea: sCliLinea + mostrador - neta,
+      };
       const cuadra = Object.values(difs).every((d) => Math.abs(d) <= TOLERANCIA);
-      if (lineas.length === 0 || !cuadra) {
+      if (lineas.length === 0 || !cuadra || !zonasOk) {
         fallos++;
         log(`${resumen} · FALLO (no escrito) · difs ${JSON.stringify(difs)} · líneas ${lineas.length}`);
         continue;

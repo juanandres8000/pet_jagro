@@ -1,6 +1,6 @@
 import { getValidToken } from './client';
 import { fetchRango, hoyColombia, trocear, type Rango } from './ventas';
-import { totales, agrupar, porZona, type VentaLinea } from './mappers/ventas';
+import { totales, agrupar, porZona, porClienteLinea, type VentaLinea } from './mappers/ventas';
 import { readCobertura, writeMes, type MesAgregado } from './ventasMensualStore';
 
 /**
@@ -127,6 +127,8 @@ export function agregarMes(mes: string, lineas: VentaLinea[], rango: Rango, parc
     // venta NETA: agrupar suma l.venta, que toVentaLinea ya descuenta (regla 3).
     porProveedor: agrupar(lineas, (l) => l.nitProveedor ?? '', (l) => l.proveedor || '(sin proveedor)'),
     porZona: porZona(lineas),
+    // Completo, sin el NIT de mostrador: Σ = venta neta − mostrador.
+    porClienteLinea: porClienteLinea(lineas),
     hasta: rango.hasta,
     parcial,
   };

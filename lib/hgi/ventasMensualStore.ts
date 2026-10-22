@@ -1,5 +1,5 @@
 import { getSql as getDb } from '../pg';
-import type { VentaPorClave, VentaPorZona } from './mappers/ventas';
+import type { VentaPorClave, VentaPorZona, VentaClienteLinea } from './mappers/ventas';
 
 /**
  * Store de agregados mensuales de ventas (tabla hgi_ventas_mensual, una fila por
@@ -32,6 +32,12 @@ export interface MesAgregado {
    */
   porProveedor: VentaPorClave[] | null;
   porZona: VentaPorZona[] | null;
+  /**
+   * Cliente × línea (migración 011). null = sin construir para esa dimensión.
+   * `readAnio`/`readMes` NO lo traen (~100 KB por mes que Gerencia no usa):
+   * siempre llega null ahí. Se lee filtrado por NIT con `readClienteLineaAnio`.
+   */
+  porClienteLinea: VentaClienteLinea[] | null;
   hasta: string;
   parcial: boolean;
   builtAt: Date;
@@ -83,6 +89,7 @@ async function crearTabla(): Promise<void> {
       por_vendedor  JSONB,
       por_proveedor JSONB,
       por_zona      JSONB,
+      por_cliente_linea JSONB,
       hasta         TEXT,
       parcial       BOOLEAN NOT NULL DEFAULT FALSE,
       built_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -107,6 +114,7 @@ interface Fila {
   por_vendedor: unknown;
   por_proveedor: unknown;
   por_zona: unknown;
+  por_cliente_linea?: unknown;
   hasta: string | null;
   parcial: boolean;
   built_at: string | Date;
@@ -131,6 +139,7 @@ const toMes = (f: Fila): MesAgregado => ({
   porVendedor: arr<VentaPorClave>(f.por_vendedor),
   porProveedor: Array.isArray(f.por_proveedor) ? (f.por_proveedor as VentaPorClave[]) : null,
   porZona: Array.isArray(f.por_zona) ? (f.por_zona as VentaPorZona[]) : null,
+  porClienteLinea: Array.isArray(f.por_cliente_linea) ? (f.por_cliente_linea as VentaClienteLinea[]) : null,
   hasta: f.hasta ?? '',
   parcial: !!f.parcial,
   builtAt: new Date(f.built_at),
@@ -146,7 +155,7 @@ export async function writeMes(m: Omit<MesAgregado, 'builtAt'>): Promise<Date> {
     INSERT INTO hgi_ventas_mensual
       (mes, venta, costo, margen, iva, descuento, lineas, documentos,
        clientes_nits, pedidos_nums, top_clientes, top_productos, por_linea, por_vendedor,
-       por_proveedor, por_zona, hasta, parcial, built_at)
+       por_proveedor, por_zona, por_cliente_linea, hasta, parcial, built_at)
     VALUES
       (${m.mes}, ${m.venta}, ${m.costo}, ${m.margen}, ${m.iva}, ${m.descuento},
        ${m.lineas}, ${m.documentos},
@@ -155,6 +164,7 @@ export async function writeMes(m: Omit<MesAgregado, 'builtAt'>): Promise<Date> {
        ${sql.json(m.topProductos as never)}, ${sql.json(m.porLinea as never)},
        ${sql.json(m.porVendedor as never)},
        ${sql.json(m.porProveedor as never)}, ${sql.json(m.porZona as never)},
+       ${sql.json(m.porClienteLinea as never)},
        ${m.hasta}, ${m.parcial}, NOW())
     ON CONFLICT (mes) DO UPDATE
       SET venta = EXCLUDED.venta,
@@ -172,6 +182,7 @@ export async function writeMes(m: Omit<MesAgregado, 'builtAt'>): Promise<Date> {
           por_vendedor = EXCLUDED.por_vendedor,
           por_proveedor = EXCLUDED.por_proveedor,
           por_zona = EXCLUDED.por_zona,
+          por_cliente_linea = EXCLUDED.por_cliente_linea,
           hasta = EXCLUDED.hasta,
           parcial = EXCLUDED.parcial,
           built_at = NOW()
@@ -180,12 +191,20 @@ export async function writeMes(m: Omit<MesAgregado, 'builtAt'>): Promise<Date> {
   return new Date(rows[0].built_at);
 }
 
+/**
+ * Columnas de las lecturas generales: todo menos por_cliente_linea, que pesa el
+ * doble que por_zona y sólo lo usa /comercial (vía readClienteLineaAnio).
+ */
+const COLUMNAS = `mes, venta, costo, margen, iva, descuento, lineas, documentos,
+  clientes_nits, pedidos_nums, top_clientes, top_productos, por_linea, por_vendedor,
+  por_proveedor, por_zona, hasta, parcial, built_at`;
+
 /** Meses de un año ('YYYY'), ordenados. Devuelve sólo los que existen. */
 export async function readAnio(anio: string): Promise<MesAgregado[]> {
   await ensureTable();
   const sql = getDb();
   const rows = (await sql`
-    SELECT * FROM hgi_ventas_mensual
+    SELECT ${sql.unsafe(COLUMNAS)} FROM hgi_ventas_mensual
      WHERE mes LIKE ${anio + '-%'}
      ORDER BY mes
   `) as unknown as Fila[];
@@ -196,7 +215,7 @@ export async function readAnio(anio: string): Promise<MesAgregado[]> {
 export async function readMes(mes: string): Promise<MesAgregado | null> {
   await ensureTable();
   const sql = getDb();
-  const rows = (await sql`SELECT * FROM hgi_ventas_mensual WHERE mes = ${mes}`) as unknown as Fila[];
+  const rows = (await sql`SELECT ${sql.unsafe(COLUMNAS)} FROM hgi_ventas_mensual WHERE mes = ${mes}`) as unknown as Fila[];
   return rows[0] ? toMes(rows[0]) : null;
 }
 
@@ -208,4 +227,29 @@ export async function readCobertura(): Promise<Array<{ mes: string; parcial: boo
     SELECT mes, parcial, built_at FROM hgi_ventas_mensual ORDER BY mes
   `) as unknown as Array<{ mes: string; parcial: boolean; built_at: string | Date }>;
   return rows.map((r) => ({ mes: r.mes, parcial: !!r.parcial, builtAt: new Date(r.built_at) }));
+}
+
+/**
+ * Cliente × línea de UN cliente en los meses de un año, filtrado en Postgres:
+ * el JSONB completo del año pesa ~1 MB y aquí viaja sólo lo del NIT.
+ * `filas` es null en los meses sin la dimensión construida (anteriores a la 011).
+ */
+export async function readClienteLineaAnio(
+  anio: string,
+  nit: string,
+): Promise<Array<{ mes: string; filas: VentaClienteLinea[] | null }>> {
+  await ensureTable();
+  const sql = getDb();
+  const rows = (await sql`
+    SELECT mes,
+           CASE WHEN por_cliente_linea IS NULL THEN NULL
+                ELSE COALESCE(
+                  (SELECT jsonb_agg(e) FROM jsonb_array_elements(por_cliente_linea) e WHERE e->>'nit' = ${nit}),
+                  '[]'::jsonb)
+           END AS filas
+      FROM hgi_ventas_mensual
+     WHERE mes LIKE ${anio + '-%'}
+     ORDER BY mes
+  `) as unknown as Array<{ mes: string; filas: unknown }>;
+  return rows.map((r) => ({ mes: r.mes, filas: Array.isArray(r.filas) ? (r.filas as VentaClienteLinea[]) : null }));
 }
