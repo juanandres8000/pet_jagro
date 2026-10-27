@@ -20,13 +20,15 @@ export const maxDuration = 30;
 const FECHA = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 const NIT = /^\d{5,15}$/;
 const MAX_DIAS = 366;
+/** YYYY-MM-DD que además EXISTE en el calendario (Date.parse convierte 02-30 en 03-02). */
+const fechaReal = (s: string) => FECHA.test(s) && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const nit = url.searchParams.get('nit') ?? '';
   const desde = url.searchParams.get('desde') ?? '';
   const hasta = url.searchParams.get('hasta') ?? '';
-  if (!NIT.test(nit) || !FECHA.test(desde) || !FECHA.test(hasta) || desde > hasta) {
+  if (!NIT.test(nit) || !fechaReal(desde) || !fechaReal(hasta) || desde > hasta) {
     return NextResponse.json({ ok: false, mensaje: 'Parámetros: nit (dígitos), desde y hasta (YYYY-MM-DD, desde ≤ hasta)' }, { status: 400 });
   }
   const dias = (Date.parse(`${hasta}T00:00:00Z`) - Date.parse(`${desde}T00:00:00Z`)) / 86_400_000;
