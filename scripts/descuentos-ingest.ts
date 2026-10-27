@@ -51,7 +51,7 @@ async function fetcherLocal(): Promise<{ traer: HgiFetch; cerrar: () => Promise<
   if (!base) throw new Error('Falta HGI_BASE_URL en el entorno');
   const url = process.env.TOKEN_DATABASE_URL || process.env.DATABASE_URL;
   if (!url) throw new Error('Falta DATABASE_URL');
-  const sql = postgres(url, { prepare: false, max: 1, connection: { default_transaction_read_only: 'on' } });
+  const sql = postgres(url, { prepare: false, max: 1, connection: { default_transaction_read_only: true } });
   const [row] = (await sql`SELECT jwt, expires_at FROM hgi_token WHERE id = 1`) as unknown as Array<{ jwt: string; expires_at: Date | null }>;
   await sql.end();
   if (!row?.jwt || (row.expires_at && new Date(row.expires_at).getTime() <= Date.now())) {

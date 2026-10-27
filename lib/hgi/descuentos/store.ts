@@ -224,9 +224,12 @@ const n = (v: unknown) => Number(v ?? 0);
 
 /**
  * Resumen por laboratorio de un rango de meses [desdeMes, hastaMes].
- * Las cuatro lecturas van en serie.
+ * `mesesAlPagar`: meses en los que se suma el descuento al pagar (14352290). Deben
+ * ser meses con P&G COMPLETO (readMesesPygCompletos): pyg_movimiento puede tener
+ * un mes a medias y sumarlo daría una cifra parcial que parece real.
+ * Las lecturas van en serie.
  */
-export async function readResumenLabs(desdeMes: string, hastaMes: string): Promise<FilaLab[]> {
+export async function readResumenLabs(desdeMes: string, hastaMes: string, mesesAlPagar: string[]): Promise<FilaLab[]> {
   await verificarTablas();
   const sql = getDb();
   const labs = new Map<string, FilaLab>();
@@ -275,10 +278,10 @@ export async function readResumenLabs(desdeMes: string, hastaMes: string): Promi
 
   // Descuento en compra al pagar: contabilidad ya ingestada por el P&G (lectura).
   // Va por TERCERO (a quién se le pagó), que casi siempre es el laboratorio.
-  const alPagar = (await sql`
+  const alPagar = !mesesAlPagar.length ? [] : (await sql`
     SELECT tercero, sum(credito) - sum(debito) AS neto
       FROM pyg_movimiento
-     WHERE cuenta = '14352290' AND periodo <> 13 AND mes BETWEEN ${desdeMes} AND ${hastaMes}
+     WHERE cuenta = '14352290' AND periodo <> 13 AND mes = ANY(${mesesAlPagar})
      GROUP BY tercero
   `) as unknown as Array<Record<string, unknown>>;
   for (const r of alPagar) {
@@ -346,6 +349,28 @@ export async function readReportePrecioCero(nit: string, desde: string, hasta: s
     costoTotal: n(r.costo_total),
     cliente: String(r.nombre_tercero ?? ''),
   }));
+}
+
+/**
+ * Meses del rango con P&G COMPLETO: ventana MENSUAL ok en pyg_ventana_control, la
+ * misma regla que usa /api/pyg (readMesesMensualOk). Consulta propia y de sólo
+ * lectura: ensureMovimientoTables del P&G crearía tablas sin RLS si faltaran.
+ * Sin la tabla (base local de pruebas) devuelve [].
+ */
+export async function readMesesPygCompletos(desdeMes: string, hastaMes: string): Promise<string[]> {
+  const sql = getDb();
+  const [{ existe }] = (await sql`SELECT to_regclass('public.pyg_ventana_control') IS NOT NULL AS existe`) as unknown as Array<{ existe: boolean }>;
+  if (!existe) return [];
+  const filas = (await sql`
+    SELECT to_char(ventana_desde, 'YYYY-MM') AS mes
+      FROM pyg_ventana_control
+     WHERE estado = 'ok'
+       AND ventana_desde = date_trunc('month', ventana_desde)::date
+       AND ventana_hasta = (date_trunc('month', ventana_desde) + interval '1 month - 1 day')::date
+       AND to_char(ventana_desde, 'YYYY-MM') BETWEEN ${desdeMes} AND ${hastaMes}
+     ORDER BY 1
+  `) as unknown as Array<{ mes: string }>;
+  return filas.map((f) => f.mes);
 }
 
 /** Meses con al menos una ingesta exitosa (la API no muestra cifras de meses sin datos). */
