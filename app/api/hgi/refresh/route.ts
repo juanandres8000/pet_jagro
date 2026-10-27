@@ -125,7 +125,7 @@ async function runRefresh(req: Request): Promise<NextResponse> {
 
   if (param === DATASET_DESCUENTOS) {
     const mesParam = url.searchParams.get('mes') ?? undefined;
-    if (mesParam && !/^\d{4}-\d{2}$/.test(mesParam)) {
+    if (mesParam && !/^\d{4}-(0[1-9]|1[0-2])$/.test(mesParam)) {
       return NextResponse.json({ ok: false, mensaje: 'Parámetro "mes" debe ser YYYY-MM' }, { status: 400 });
     }
     try {
