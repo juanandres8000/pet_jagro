@@ -24,7 +24,7 @@ Sistema de gestión de picking y distribución para productos veterinarios. Demo
 Nav agrupado (`MENU_GROUPS` en `app/page.tsx`):
 - **DIRECCIÓN**: Gerencia ← home del dashboard (tab por defecto)
 - **COMERCIAL**: Clientes
-- **FINANZAS**: Cartera
+- **FINANZAS**: Cartera, Vendedores, Descuentos (precio cero, ver docs/DESCUENTOS.md)
 
 **OPERACIÓN (Picking, Inventario, Catálogo) está oculta**, no retirada: el grupo
 va comentado en `MENU_GROUPS`, pero las ramas de render y los componentes siguen
@@ -312,6 +312,23 @@ token vigente de `hgi_token` con un SELECT y haga el GET directo (ver
 `scripts/pyg-ingest-ventana.ts`). **Nunca llamar `/Api/Autenticar` a mano**: HGINet
 admite un solo token vigente por usuario y autenticar desde una máquina de
 desarrollo se lo arrebata a producción.
+
+### Descuentos diferenciados (precio cero) — docs/DESCUENTOS.md
+Menú Finanzas → Descuentos (`/descuentos`). Tablas propias `dd_linea`,
+`dd_venta_agregado`, `dd_ventana_control` (migración 012, con RLS); no escribe en
+ninguna otra. Cron horario `?dataset=descuentos`, ventanas MENSUALES.
+
+- **Precio cero** = línea de factura con `ValorTotalDetalle = 0` y cantidad > 0
+  (no notas crédito). HGINet lo registra a costo pleno sin ingreso: NO es descuento.
+- **Compras sí salen de `ObtenerDetalleReporte`**, pero con `tipo_documento=0` y
+  `codigo_transaccion` EXPLÍCITO (40 compra, 45 compra precio cero, 33/32 bonificados,
+  05 nota débito). Con `*` devuelve pedidos. `Api/Transacciones/Obtener` lista las 65.
+- El descuento al pagar (14352290) sale de `pyg_movimiento` y sólo se suma en meses con
+  ventana mensual ok del P&G; si no, la vista dice "Sin dato" (nunca $ 0).
+- El store NO crea tablas (nacerían sin RLS): si falta la 012, falla con mensaje claro.
+- Un `?dataset=` desconocido en `/api/hgi/refresh` cae a reconstruir TODO: cualquier
+  dataset nuevo necesita su rama antes de añadir el cron.
+- `npm test` corre los tests (node:test, sin dependencias).
 
 ### Regla dura: nunca probar escrituras contra un dataset real
 

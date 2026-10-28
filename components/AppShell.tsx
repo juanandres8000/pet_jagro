@@ -16,8 +16,9 @@ import CarteraView from '@/components/CarteraView';
 import ComposicionView from '@/components/ComposicionView';
 import VendedoresView from '@/components/VendedoresView';
 import ComercialView from '@/components/ComercialView';
+import DescuentosView from '@/components/DescuentosView';
 
-type Tab = 'gerencia' | 'pyg' | 'comercial' | 'picking' | 'inventario' | 'catalogo' | 'clientes' | 'cartera' | 'composicion' | 'vendedores';
+type Tab = 'gerencia' | 'pyg' | 'comercial' | 'descuentos' | 'picking' | 'inventario' | 'catalogo' | 'clientes' | 'cartera' | 'composicion' | 'vendedores';
 
 interface MenuItem {
   id: Tab;
@@ -66,6 +67,7 @@ const MENU_GROUPS: MenuGroup[] = [
     items: [
       { id: 'cartera', label: 'Cartera' },
       { id: 'vendedores', label: 'Vendedores' },
+      { id: 'descuentos', label: 'Descuentos' },
       // COMPOSICIÓN OCULTA — mismo patrón que Operación: se quita la entrada de
       // nav, la rama de render y el componente siguen montados abajo.
       // Su premisa no existe en esta instancia: el ERP clasifica TODA la cartera
@@ -206,6 +208,7 @@ export default function AppShell({ initialTab = 'gerencia' }: { initialTab?: Tab
             {activeTab === 'gerencia' && <GerenciaView />}
             {activeTab === 'pyg' && <PygView />}
             {activeTab === 'comercial' && <ComercialView />}
+            {activeTab === 'descuentos' && <DescuentosView />}
             {activeTab === 'picking' && <PickingView />}
             {activeTab === 'inventario' && <InventarioView />}
             {activeTab === 'catalogo' && <CatalogoView />}

@@ -10,7 +10,8 @@
     { "path": "/api/hgi/refresh?dataset=ventas_mensual", "schedule": "22 * * * *" },
     { "path": "/api/hgi/refresh?dataset=pyg_cuentas", "schedule": "9 8 * * *" },
     { "path": "/api/hgi/refresh?dataset=pyg_dia", "schedule": "47 * * * *" },
-    { "path": "/api/hgi/refresh?dataset=pyg_cierres", "schedule": "17 */6 * * *" }
+    { "path": "/api/hgi/refresh?dataset=pyg_cierres", "schedule": "17 */6 * * *" },
+    { "path": "/api/hgi/refresh?dataset=descuentos", "schedule": "52 * * * *" }
   ],
   "functions": {
     "app/api/hgi/refresh/route.ts": { "memory": 3009 }
