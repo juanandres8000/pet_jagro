@@ -21,11 +21,24 @@ import { readControlDd, type FilaControlDd, type Ventana } from './store';
 export const MES_INICIAL = '2026-01';
 const HORAS_REFRESCO = 6;
 const MAX_INTENTOS = 3;
+/**
+ * Tras MAX_INTENTOS fallos seguidos una ventana descansa este tiempo y luego vuelve
+ * a la cola (no se abandona nunca: un corte largo de HGINet no deja huecos fijos).
+ */
+const ENFRIAMIENTO_MS = 6 * 3_600_000;
+/** Una ventana 'pendiente' más nueva que esto puede estar corriendo en otra invocación. */
+const PENDIENTE_VIVA_MS = 10 * 60_000;
 /** Día del mes hasta el cual el mes anterior sigue "vivo". */
 const DIA_CORTE_MES_ANTERIOR = 15;
 const FRACCION_PRESUPUESTO = 0.8;
-/** Estimación conservadora de una ventana mensual (ventas ~6 trozos + 5 compras). */
-const ESTIMADO_VENTANA_MS = 90_000;
+/**
+ * Límite DURO de una ventana: ninguna llamada a HGINet arranca si no termina antes
+ * de este punto (ingest.ts exige TIMEOUT_MS libres), así la ventana falla limpia y
+ * queda en 'error' antes de que Vercel mate el lambda.
+ */
+const FRACCION_LIMITE = 0.95;
+/** Estimación de una ventana mensual (ventas ~6 trozos + 5 compras). Medido 27-oct: 36–113 s. */
+const ESTIMADO_VENTANA_MS = 120_000;
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -64,6 +77,13 @@ export function elegirVentanas(control: FilaControlDd[], hoy: string, ahoraMs: n
   if (Number(hoy.slice(8, 10)) <= DIA_CORTE_MES_ANTERIOR) vivos.push(mesAnterior(actual));
   const out: Array<{ mes: string; motivo: string }> = [];
   const ya = new Set<string>();
+  // Una ventana que no terminó en 'ok' (error, o 'pendiente' de un lambda que murió)
+  // cuenta como intento fallido: marcarIntento suma intentos y el ok los pone en 0.
+  const fallida = (c?: FilaControlDd) => !!c && c.estado !== 'ok';
+  const enCurso = (c?: FilaControlDd) => !!c && c.estado === 'pendiente' && ahoraMs - c.actualizadoEn.getTime() < PENDIENTE_VIVA_MS;
+  const agotada = (c?: FilaControlDd) =>
+    fallida(c) && c!.intentos >= MAX_INTENTOS && ahoraMs - c!.actualizadoEn.getTime() < ENFRIAMIENTO_MS;
+  const bloqueada = (c?: FilaControlDd) => enCurso(c) || agotada(c);
   const add = (mes: string, motivo: string) => {
     if (!ya.has(mes) && mes >= MES_INICIAL) {
       ya.add(mes);
@@ -74,15 +94,18 @@ export function elegirVentanas(control: FilaControlDd[], hoy: string, ahoraMs: n
   for (const mes of vivos) {
     const c = porMes.get(mes);
     const viejo = !c?.okEn || ahoraMs - c.okEn.getTime() > HORAS_REFRESCO * 3_600_000;
-    const agotado = c?.estado === 'error' && c.intentos >= MAX_INTENTOS && ahoraMs - c.actualizadoEn.getTime() < 3_600_000;
-    if (viejo && !agotado) add(mes, c?.okEn ? 'mes vivo, refresco' : 'mes vivo sin ingestar');
+    if (viejo && !bloqueada(c)) add(mes, c?.okEn ? 'mes vivo, refresco' : 'mes vivo sin ingestar');
   }
-  for (const c of [...control].reverse()) {
-    if (c.estado === 'error' && c.intentos < MAX_INTENTOS) add(c.desde.slice(0, 7), `reintento ${c.intentos + 1}/${MAX_INTENTOS}`);
-  }
+  // Los reintentos van DESPUÉS de los meses nunca ingestados: una ventana que falla
+  // no debe bloquear el backfill del resto.
   for (const mes of mesesHasta(hoy).reverse()) {
     const c = porMes.get(mes);
-    if (!c?.okEn && !(c && c.estado === 'error' && c.intentos >= MAX_INTENTOS)) add(mes, 'mes sin ingestar');
+    if (!c?.okEn && !fallida(c)) add(mes, 'mes sin ingestar');
+  }
+  for (const c of [...control].reverse()) {
+    if (fallida(c) && !bloqueada(c)) {
+      add(c.desde.slice(0, 7), c.intentos >= MAX_INTENTOS ? 'reintento tras enfriamiento' : `reintento ${c.intentos + 1}/${MAX_INTENTOS}`);
+    }
   }
   return out;
 }
@@ -105,7 +128,7 @@ export async function refreshDescuentos(maxDurationS: number, mes?: string): Pro
   const hoy = hoyColombia();
   let cola: Array<{ mes: string; motivo: string }>;
   if (mes) {
-    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes) || mes > hoy.slice(0, 7)) throw new Error(`mes inválido: ${mes}`);
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes) || mes > hoy.slice(0, 7) || mes < MES_INICIAL) throw new Error(`mes inválido: ${mes}`);
     cola = [{ mes, motivo: 'forzado (?mes=)' }];
   } else {
     cola = elegirVentanas(await readControlDd(), hoy, Date.now());
@@ -119,7 +142,7 @@ export async function refreshDescuentos(maxDurationS: number, mes?: string): Pro
     const { mes: m, motivo } = cola[i];
     console.log(`[descuentos] ventana ${m} — ${motivo}`);
     try {
-      const r = await ingestarVentana(ventanaDeMes(m));
+      const r = await ingestarVentana(ventanaDeMes(m), undefined, t0 + maxDurationS * 1000 * FRACCION_LIMITE);
       console.log(
         `[descuentos] ${m} ok: ${r.lineasVenta} líneas de venta, ${r.docsPrecioCero} facturas con precio cero, ` +
           `${r.lineasCompra} de compra, ${(r.duracionMs / 1000).toFixed(1)}s`,

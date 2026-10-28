@@ -200,12 +200,46 @@ test('elegirVentanas: un mes vivo refrescado hace poco no se repite', () => {
   assert.deepEqual(elegirVentanas(control, '2026-10-27', ahora), []);
 });
 
-test('elegirVentanas: reintenta errores y abandona los agotados', () => {
+test('elegirVentanas: los meses nunca ingestados van antes que los reintentos', () => {
   const ahora = Date.parse('2026-10-27T12:00:00Z');
   const control = mesesHasta('2026-10-27').map((m) => ctl(m, { okEn: new Date(ahora - 3_600_000) }));
-  control[2] = ctl('2026-03', { estado: 'error', intentos: 1, okEn: null });
-  control[3] = ctl('2026-04', { estado: 'error', intentos: 3, okEn: null });
+  control[2] = ctl('2026-03', { estado: 'error', intentos: 1, okEn: null, actualizadoEn: new Date(ahora - 3_600_000) });
+  control.splice(1, 1); // 2026-02 sin fila: nunca ingestado
   const r = elegirVentanas(control, '2026-10-27', ahora);
-  assert.deepEqual(r.map((x) => x.mes), ['2026-03']);
-  assert.match(r[0].motivo, /reintento 2\/3/);
+  assert.deepEqual(r.map((x) => x.mes), ['2026-02', '2026-03']);
+  assert.match(r[1].motivo, /reintento 2\/3/);
+});
+
+test('elegirVentanas: una ventana agotada descansa y luego vuelve (no se abandona)', () => {
+  const ahora = Date.parse('2026-10-27T12:00:00Z');
+  const base = mesesHasta('2026-10-27').map((m) => ctl(m, { okEn: new Date(ahora - 3_600_000) }));
+  const reciente = [...base];
+  reciente[3] = ctl('2026-04', { estado: 'error', intentos: 3, okEn: null, actualizadoEn: new Date(ahora - 3_600_000) });
+  assert.deepEqual(elegirVentanas(reciente, '2026-10-27', ahora), []);
+  const vieja = [...base];
+  vieja[3] = ctl('2026-04', { estado: 'error', intentos: 3, okEn: null, actualizadoEn: new Date(ahora - 7 * 3_600_000) });
+  const r = elegirVentanas(vieja, '2026-10-27', ahora);
+  assert.deepEqual(r.map((x) => x.mes), ['2026-04']);
+  assert.match(r[0].motivo, /enfriamiento/);
+});
+
+test('elegirVentanas: una ventana que quedó pendiente (lambda muerto) cuenta como fallida', () => {
+  const ahora = Date.parse('2026-10-27T12:00:00Z');
+  const control = mesesHasta('2026-10-27').map((m) => ctl(m, { okEn: new Date(ahora - 3_600_000) }));
+  // Muerta hace 2 h, nunca terminó: se reintenta, pero DESPUÉS de lo nunca ingestado.
+  control[7] = ctl('2026-08', { estado: 'pendiente', intentos: 1, okEn: null, actualizadoEn: new Date(ahora - 2 * 3_600_000) });
+  assert.deepEqual(elegirVentanas(control, '2026-10-27', ahora).map((x) => x.mes), ['2026-08']);
+  // Pendiente de hace 2 min: puede estar corriendo en otra invocación, no se toca.
+  control[7] = ctl('2026-08', { estado: 'pendiente', intentos: 1, okEn: null, actualizadoEn: new Date(ahora - 120_000) });
+  assert.deepEqual(elegirVentanas(control, '2026-10-27', ahora), []);
+  // Pendiente 3 veces seguidas (muere siempre): enfriamiento, no bucle.
+  control[7] = ctl('2026-08', { estado: 'pendiente', intentos: 3, okEn: null, actualizadoEn: new Date(ahora - 3_600_000) });
+  assert.deepEqual(elegirVentanas(control, '2026-10-27', ahora), []);
+});
+
+test('elegirVentanas: un mes vivo con error reciente agotado no se reintenta en bucle', () => {
+  const ahora = Date.parse('2026-10-27T12:00:00Z');
+  const control = mesesHasta('2026-10-27').map((m) => ctl(m, { okEn: new Date(ahora - 3_600_000) }));
+  control[9] = ctl('2026-10', { estado: 'error', intentos: 3, okEn: new Date(ahora - 10 * 3_600_000), actualizadoEn: new Date(ahora - 600_000) });
+  assert.deepEqual(elegirVentanas(control, '2026-10-27', ahora), []);
 });

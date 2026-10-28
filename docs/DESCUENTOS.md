@@ -64,12 +64,18 @@ components/DescuentosView.tsx    vista
 - Líneas con fecha fuera de la ventana se descartan (las trae la ventana de su mes).
 - Una línea sin Id/fecha/documento hace fallar la ventana (no se guarda un mes incompleto).
 - Sustitución por `(ventana, lote <> actual)`, nunca por fecha (mismo patrón que el P&G).
-- ~40 s por mes.
+- 36–113 s por mes (medido). El cron arranca una ventana sólo si caben ~120 s en el 80 %
+  del presupuesto, y ninguna llamada a HGINet arranca si no termina antes del 95 %:
+  la ventana falla limpia (queda en `error`) en vez de morir con el lambda.
+- Un fallo NO borra datos: la ventana conserva lo del último OK (`ok_en`) hasta que un
+  reintento la reemplace entera. Probado con un corte de red real a mitad de corrida.
 
 ### Qué ventana toca (`elegirVentanas`)
 1. Meses vivos (el en curso, y el anterior hasta el día 15) si su último OK tiene > 6 h.
-2. Ventanas en error con < 3 intentos.
-3. Meses sin ingestar desde `MES_INICIAL` (2026-01), del más nuevo al más viejo.
+2. Meses sin ingestar desde `MES_INICIAL` (2026-01), del más nuevo al más viejo.
+3. Reintentos: ventanas que no terminaron en ok (error, o 'pendiente' de un lambda que
+   murió). Tras 3 fallos seguidos descansan 6 h y vuelven a la cola: nunca se abandonan.
+   Una 'pendiente' de menos de 10 min se respeta (puede estar corriendo).
 Un mes cerrado con OK no se vuelve a pedir; para forzarlo: `?dataset=descuentos&mes=YYYY-MM`.
 `ok_en` guarda la última ingesta exitosa: un refresco fallido no borra ni oculta los datos anteriores.
 
@@ -94,6 +100,13 @@ Un mes cerrado con OK no se vuelve a pedir; para forzarlo: `?dataset=descuentos&
 - **Ver el estado**: `SELECT * FROM dd_ventana_control ORDER BY ventana_desde;`
 - **Retirar el módulo** sin perder nada del resto: quitar la entrada del menú y el cron;
   las tablas `dd_*` son independientes (`DROP TABLE dd_linea, dd_venta_agregado, dd_ventana_control`).
+
+## Limitaciones conocidas
+- Si HGINet cambia la FECHA de una línea a otro mes ya cerrado, la línea se mueve a la
+  ventana nueva pero el agregado del mes viejo la conserva hasta que ese mes se reingeste
+  (`?dataset=descuentos&mes=YYYY-MM`). Raro; el mes anterior se re-lee hasta el día 15.
+- El laboratorio de la compensación "al pagar" es el tercero pagado; si se le paga a un
+  distribuidor y no al laboratorio, ese descuento cae en el distribuidor.
 
 ## Pendientes / preguntas para Jotagro
 - Confirmar qué laboratorios reconocen el precio cero y por qué canal (hoy se infiere).

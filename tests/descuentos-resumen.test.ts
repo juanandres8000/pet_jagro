@@ -111,6 +111,15 @@ test('hojasReporte replica el formato del Excel manual', () => {
   assert.equal(det[1][9], null); // la pagada no lleva valor lista
 });
 
+test('hojasReporte advierte cuando el periodo tiene meses sin datos', () => {
+  const sin = hojasReporte({ nit: '900', nombre: 'LAB A' }, '2026-07-01', '2026-08-31', [lr({})], ['2026-07']);
+  assert.equal(sin[0].filas[0][5], 'ADVERTENCIA: REPORTE INCOMPLETO, SIN DATOS PARA 2026-07');
+  assert.equal(sin[1].filas[0][0], 'ADVERTENCIA: REPORTE INCOMPLETO, SIN DATOS PARA 2026-07');
+  const con = hojasReporte({ nit: '900', nombre: 'LAB A' }, '2026-08-01', '2026-08-31', [lr({})]);
+  assert.equal(con[0].filas[0][5], null);
+  assert.equal(con[1].filas[0][0], 'TR');
+});
+
 test('nombreArchivo limpia caracteres peligrosos', () => {
   assert.equal(nombreArchivo('Compañía "X"/../\r\n', '2026-09-01', '2026-09-30'), 'PRECIO CERO Compania X.. 2026-09-01 a 2026-09-30.xlsx');
   assert.equal(nombreArchivo('', '2026-09-01', '2026-09-30'), 'PRECIO CERO LABORATORIO 2026-09-01 a 2026-09-30.xlsx');

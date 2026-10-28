@@ -188,11 +188,16 @@ export function hojasReporte(
   desde: string,
   hasta: string,
   lineas: LineaReporte[],
+  /** Meses del periodo SIN datos ingestados: el reporte estaría incompleto y lo dice. */
+  mesesSinDatos: string[] = [],
 ): Hoja[] {
   const bloques = agruparPorFactura(lineas);
   const resumen = bonificadoPorProducto(bloques);
+  const aviso = mesesSinDatos.length
+    ? `ADVERTENCIA: REPORTE INCOMPLETO, SIN DATOS PARA ${mesesSinDatos.join(', ')}`
+    : null;
   const filas: Celda[][] = [
-    [null, null, 'JOTAGRO DISTRIBUCIONES ESPECIALIZADAS S.A.S.'],
+    [null, null, 'JOTAGRO DISTRIBUCIONES ESPECIALIZADAS S.A.S.', null, null, aviso],
     [null, null, `PRECIO CERO ${lab.nombre} (NIT ${lab.nit})`],
     [null, null, 'DETALLE'],
     [null, null, `ENTRE ${desde} Y ${hasta}`],
@@ -215,6 +220,7 @@ export function hojasReporte(
   filas.push([], [null, null, 'TOTAL FACTURAS', bloques.length, null, 'TOTAL UNIDADES BONIFICADAS', totalUnd]);
 
   const detalle: Celda[][] = [
+    ...(aviso ? [[aviso]] : []),
     ['TR', 'DOCUMENTO', 'FECHA', 'CLIENTE', 'CÓDIGO', 'PRODUCTO', 'CANTIDAD', 'TIPO', 'PRECIO LISTA UNIT.', 'VALOR LISTA', 'COSTO'],
   ];
   for (const b of bloques)

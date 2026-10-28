@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { readReportePrecioCero, readResumenLabs } from '@/lib/hgi/descuentos/store';
+import { readMesesOk, readReportePrecioCero, readResumenLabs } from '@/lib/hgi/descuentos/store';
+import { mesesHasta } from '@/lib/hgi/descuentos/refresh';
 import { hojasReporte, nombreArchivo } from '@/lib/hgi/descuentos/resumen';
 import { construirXlsx } from '@/lib/xlsx';
 
@@ -19,7 +20,8 @@ export const maxDuration = 30;
 
 const FECHA = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 const NIT = /^\d{5,15}$/;
-const MAX_DIAS = 366;
+// Mismo tope que /api/descuentos (24 meses): la vista arma el enlace con su rango.
+const MAX_DIAS = 731;
 /** YYYY-MM-DD que además EXISTE en el calendario (Date.parse convierte 02-30 en 03-02). */
 const fechaReal = (s: string) => FECHA.test(s) && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
 
@@ -37,11 +39,15 @@ export async function GET(req: Request) {
   }
 
   try {
+    // Meses del periodo sin ingesta ok: el .xlsx se usa para cobrar, así que si está
+    // incompleto lo dice en la primera fila (y en un header para quien lo consuma).
+    const conDatos = new Set(await readMesesOk());
+    const sinDatos = mesesHasta(hasta, desde.slice(0, 7)).filter((m) => !conDatos.has(m));
     const lineas = await readReportePrecioCero(nit, desde, hasta);
     // Nombre del laboratorio: del resumen del periodo (el mismo nombre que la vista).
     const labs = await readResumenLabs(desde.slice(0, 7), hasta.slice(0, 7), []);
     const nombre = labs.find((l) => l.nit === nit)?.nombre || nit;
-    const xlsx = construirXlsx(hojasReporte({ nit, nombre }, desde, hasta, lineas));
+    const xlsx = construirXlsx(hojasReporte({ nit, nombre }, desde, hasta, lineas, sinDatos));
     const archivo = nombreArchivo(nombre, desde, hasta);
     // ArrayBuffer exacto del archivo: BodyInit no acepta Uint8Array<ArrayBufferLike>.
     const cuerpo = xlsx.buffer.slice(xlsx.byteOffset, xlsx.byteOffset + xlsx.byteLength) as ArrayBuffer;
@@ -52,6 +58,7 @@ export async function GET(req: Request) {
         'Content-Disposition': `attachment; filename="${archivo}"; filename*=UTF-8''${encodeURIComponent(archivo)}`,
         'Cache-Control': 'no-store',
         'X-Content-Type-Options': 'nosniff',
+        'X-Meses-Sin-Datos': sinDatos.join(','),
       },
     });
   } catch (err) {

@@ -102,7 +102,21 @@ function rangoDePreset(p: Preset, disponibles: string[]): { desde: string; hasta
   return { desde: disponibles.find((m) => m.startsWith(ultimo.slice(0, 4))) ?? disponibles[0], hasta: ultimo };
 }
 
-function Detalle({ l, desde, hasta, alPagarDisponible }: { l: Lab; desde: string; hasta: string; alPagarDisponible: boolean }) {
+const NIT_VALIDO = /^\d{5,15}$/;
+
+function Detalle({
+  l,
+  desde,
+  hasta,
+  alPagarDisponible,
+  mesesSinDatos,
+}: {
+  l: Lab;
+  desde: string;
+  hasta: string;
+  alPagarDisponible: boolean;
+  mesesSinDatos: string[];
+}) {
   const fila = (k: string, v: string, hint?: string) => (
     <div className="flex items-baseline justify-between gap-4 border-b border-line py-1.5 last:border-0">
       <span className="text-ink-muted">
@@ -134,7 +148,7 @@ function Detalle({ l, desde, hasta, alPagarDisponible }: { l: Lab; desde: string
         {fila('Cobertura observada', pctFmt(l.cobertura))}
         {fila('Brecha', formatPrice(l.brecha))}
       </div>
-      {l.precioCero.costo > 0 && (
+      {l.precioCero.costo > 0 && NIT_VALIDO.test(l.nit) && (
         <div className="md:col-span-2">
           <a
             className="inline-flex items-center rounded border border-accent bg-accent px-3 py-1.5 text-xs font-medium text-ink-inverse transition-colors hover:bg-accent-dark"
@@ -145,6 +159,11 @@ function Detalle({ l, desde, hasta, alPagarDisponible }: { l: Lab; desde: string
           <span className="ml-3 text-[11px] text-ink-faint">
             Facturas del periodo con sus líneas pagadas y regaladas, igual al Excel manual.
           </span>
+          {mesesSinDatos.length > 0 && (
+            <span className="mt-1 block text-[11px] text-warn">
+              ⚠ Sin datos para {listaMeses(mesesSinDatos)}: el reporte saldrá incompleto y lo indica en su primera fila.
+            </span>
+          )}
         </div>
       )}
     </div>
@@ -391,7 +410,7 @@ export default function DescuentosView() {
                           {open && (
                             <tr>
                               <td colSpan={8} className="p-0">
-                                <Detalle l={l} desde={desde} hasta={hasta} alPagarDisponible={alPagarDisponible} />
+                                <Detalle l={l} desde={desde} hasta={hasta} alPagarDisponible={alPagarDisponible} mesesSinDatos={data?.mesesSinDatos ?? []} />
                               </td>
                             </tr>
                           )}

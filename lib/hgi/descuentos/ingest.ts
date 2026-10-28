@@ -50,16 +50,29 @@ const params = (desde: string, hasta: string, transaccion: string, tipoDocumento
   tipo_documento: tipoDocumento,
 });
 
+/**
+ * Fin del presupuesto: se comprueba antes de CADA llamada y de cada reintento. Si
+ * Vercel matara el lambda a mitad de ventana, marcarError no correría y la ventana
+ * quedaría 'pendiente'; cortando aquí, el error queda registrado y se reintenta.
+ */
+class PresupuestoAgotado extends Error {}
+function exigirTiempo(deadline: number) {
+  // Tiene que caber una llamada COMPLETA (hasta TIMEOUT_MS) antes del límite.
+  if (Date.now() + TIMEOUT_MS > deadline) throw new PresupuestoAgotado('Presupuesto de la corrida agotado a mitad de ventana; se reintenta en la próxima');
+}
+
 async function traerDetalle(
   desde: string,
   hasta: string,
   transaccion: string,
   tipoDocumento: '0' | '1',
   traer: HgiFetch,
+  deadline: number,
 ): Promise<HgiDetalleLinea[]> {
   let ultimo: Error | null = null;
   for (let intento = 0; intento < REINTENTOS; intento++) {
     if (intento > 0) await sleep(BACKOFF_BASE_MS * 2 ** (intento - 1));
+    exigirTiempo(deadline);
     try {
       const raw = await traer<HgiDetalleLinea[]>(
         'Documentos',
@@ -76,20 +89,39 @@ async function traerDetalle(
   throw new Error(`Detalle ${transaccion}/${tipoDocumento} ${desde}..${hasta} falló tras ${REINTENTOS} intentos: ${ultimo?.message}`);
 }
 
-/** Deja una línea por Id y sólo las fechadas dentro de la ventana. */
-function depurar(filas: HgiDetalleLinea[], v: Ventana): { filas: HgiDetalleLinea[]; fuera: number } {
+const FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Deja una línea por Id y sólo las fechadas dentro de la ventana.
+ *  - Fecha ilegible: NO es "fuera de ventana" (eso sería descartarla en silencio);
+ *    cuenta como inválida y hace fallar la ventana.
+ *  - Id repetido en la respuesta: se cuenta. Medido en ago–sep 2026: 0 repetidos
+ *    en 45.601 líneas de ventas y compras.
+ */
+function depurar(filas: HgiDetalleLinea[], v: Ventana): { filas: HgiDetalleLinea[]; fuera: number; invalidas: number; repetidas: number } {
   const porId = new Map<string, HgiDetalleLinea>();
   let fuera = 0;
+  let invalidas = 0;
+  let repetidas = 0;
   for (const f of filas) {
     const fecha = String(f.Fecha ?? '').slice(0, 10);
+    if (!FECHA_ISO.test(fecha)) {
+      invalidas++;
+      continue;
+    }
     if (fecha < v.desde || fecha > v.hasta) {
       fuera++;
       continue;
     }
-    // Sin Id no hay llave: se conserva (aLineaDd la contará como descartada).
-    porId.set(f.Id === undefined || f.Id === null ? `sin-id-${porId.size}` : String(f.Id), f);
+    if (f.Id === undefined || f.Id === null || f.Id === '') {
+      invalidas++;
+      continue;
+    }
+    const k = String(f.Id);
+    if (porId.has(k)) repetidas++;
+    porId.set(k, f);
   }
-  return { filas: [...porId.values()], fuera };
+  return { filas: [...porId.values()], fuera, invalidas, repetidas };
 }
 
 export interface ResultadoIngestaDd {
@@ -101,10 +133,16 @@ export interface ResultadoIngestaDd {
   borradas: number;
   fueraVentana: number;
   descartadas: number;
+  repetidas: number;
   duracionMs: number;
 }
 
-export async function ingestarVentana(v: Ventana, traer: HgiFetch = hgiFetchPorDefecto): Promise<ResultadoIngestaDd> {
+/** `deadline` (epoch ms): la ventana falla limpia si no termina antes. Sin él, 10 min. */
+export async function ingestarVentana(
+  v: Ventana,
+  traer: HgiFetch = hgiFetchPorDefecto,
+  deadline: number = Date.now() + 600_000,
+): Promise<ResultadoIngestaDd> {
   const lote = randomUUID();
   const t0 = Date.now();
   await marcarIntento(v, lote);
@@ -112,9 +150,10 @@ export async function ingestarVentana(v: Ventana, traer: HgiFetch = hgiFetchPorD
   try {
     const ventasCrudas: HgiDetalleLinea[] = [];
     for (const r of trocear(v)) {
-      ventasCrudas.push(...(await traerDetalle(r.desde, r.hasta, '*', '1', traer)));
+      ventasCrudas.push(...(await traerDetalle(r.desde, r.hasta, '*', '1', traer, deadline)));
       await sleep(PAUSA_MS);
     }
+    const leidasVenta = ventasCrudas.length;
     const ventas = depurar(ventasCrudas, v);
     ventasCrudas.length = 0;
     const cv = clasificarVentas(ventas.filas);
@@ -122,26 +161,34 @@ export async function ingestarVentana(v: Ventana, traer: HgiFetch = hgiFetchPorD
     const compras: LineaDd[] = [];
     let fueraCompras = 0;
     let descartadasCompras = 0;
+    let repetidasCompras = 0;
     for (const tr of Object.keys(TRANSACCIONES_COMPRA)) {
-      const d = depurar(await traerDetalle(v.desde, v.hasta, tr, '0', traer), v);
+      const d = depurar(await traerDetalle(v.desde, v.hasta, tr, '0', traer, deadline), v);
       fueraCompras += d.fuera;
+      descartadasCompras += d.invalidas;
+      repetidasCompras += d.repetidas;
       const c = clasificarCompras(d.filas, tr);
       descartadasCompras += c.descartadas;
       compras.push(...c.lineas);
       await sleep(PAUSA_MS);
     }
 
-    const descartadas = cv.descartadas + descartadasCompras;
+    const descartadas = cv.descartadas + ventas.invalidas + descartadasCompras;
     // Una línea sin Id/fecha/documento rompería la idempotencia: mejor fallar la
     // ventana (queda en error y se reintenta) que guardar un mes incompleto.
     if (descartadas > 0) throw new Error(`${descartadas} líneas sin Id/fecha/documento: ventana no guardada`);
 
     const lineas = [...cv.lineas, ...compras];
+    // dd_linea.id es PK global: un Id que apareciera en ventas Y compras haría que
+    // una fila pisara a la otra. No ocurre en los datos medidos; si ocurre, se falla.
+    const idsVenta = new Set(cv.lineas.map((l) => l.id));
+    const cruzados = compras.filter((l) => idsVenta.has(l.id)).length;
+    if (cruzados > 0) throw new Error(`${cruzados} Id de línea repetidos entre ventas y compras: ventana no guardada`);
     const duracionMs = Date.now() - t0;
     const { borradas } = await escribirVentana(v, lote, {
       lineas,
       agregados: cv.agregados,
-      lineasVenta: cv.lineasLeidas,
+      lineasVenta: leidasVenta,
       lineasCompra: compras.length,
       docsPrecioCero: cv.docsPrecioCero,
       duracionMs,
@@ -149,13 +196,14 @@ export async function ingestarVentana(v: Ventana, traer: HgiFetch = hgiFetchPorD
 
     return {
       ventana: v,
-      lineasVenta: cv.lineasLeidas,
+      lineasVenta: leidasVenta,
       docsPrecioCero: cv.docsPrecioCero,
       lineasCompra: compras.length,
       guardadas: lineas.length,
       borradas,
       fueraVentana: ventas.fuera + fueraCompras,
       descartadas,
+      repetidas: ventas.repetidas + repetidasCompras,
       duracionMs: Date.now() - t0,
     };
   } catch (err) {
