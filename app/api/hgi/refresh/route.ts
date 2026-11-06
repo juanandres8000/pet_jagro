@@ -15,6 +15,7 @@ import {
   refreshPygCierres,
 } from '@/lib/hgi/pygRefresh';
 import { refreshDescuentos } from '@/lib/hgi/descuentos/refresh';
+import { refreshRotacion } from '@/lib/hgi/rotacion/ingest';
 import { writeSnapshot, type Dataset } from '@/lib/hgi/snapshotStore';
 import type { BuildResult } from '@/lib/hgi/readThrough';
 
@@ -88,6 +89,14 @@ async function ejecutarPyg(dataset: DatasetPyg, mes?: string): Promise<Record<st
  */
 const DATASET_DESCUENTOS = 'descuentos';
 
+/**
+ * `rotacion` (docs/ROTACION.md): movimiento de inventario por mes/bodega/producto y
+ * foto de existencias. Escribe sólo en rot_*. Ventanas MENSUALES con cursor en
+ * rot_ventana_control; la foto de existencias se toma justo después del mes en curso.
+ *   ?dataset=rotacion[&mes=YYYY-MM]
+ */
+const DATASET_ROTACION = 'rotacion';
+
 /** Ejecuta el rebuild de los datasets pedidos (o todos) y guarda en Supabase. */
 async function runRefresh(req: Request): Promise<NextResponse> {
   const url = new URL(req.url);
@@ -120,6 +129,22 @@ async function runRefresh(req: Request): Promise<NextResponse> {
       const mensaje = err instanceof HgiError ? `HgiError ${err.codigo}: ${err.message}` : (err as Error).message;
       console.error(`[refresh] dataset "${param}" falló: ${mensaje}`);
       return NextResponse.json({ ok: false, dataset: param, mensaje }, { status: 502 });
+    }
+  }
+
+  if (param === DATASET_ROTACION) {
+    const mesParam = url.searchParams.get('mes') ?? undefined;
+    if (mesParam && !/^\d{4}-(0[1-9]|1[0-2])$/.test(mesParam)) {
+      return NextResponse.json({ ok: false, mensaje: 'Parámetro "mes" debe ser YYYY-MM' }, { status: 400 });
+    }
+    try {
+      const r = await refreshRotacion(maxDuration, mesParam);
+      const ok = r.errores.length === 0;
+      return NextResponse.json({ ok, ...r }, { status: ok ? 200 : 502 });
+    } catch (err) {
+      const mensaje = err instanceof HgiError ? `HgiError ${err.codigo}: ${err.message}` : (err as Error).message;
+      console.error(`[refresh] dataset "${DATASET_ROTACION}" falló: ${mensaje}`);
+      return NextResponse.json({ ok: false, dataset: DATASET_ROTACION, mensaje }, { status: 502 });
     }
   }
 
