@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { PageHeader, SectionTitle, KpiCard, Card, Th, EmptyState, FilterButton, Badge, type Tone } from '@/components/ui';
 import { formatPrice, kpiMoney } from '@/lib/format';
+import FacturasPrecioCero from '@/components/descuentos/FacturasPrecioCero';
 
 /**
  * Descuentos diferenciados (docs/DESCUENTOS.md): separa el precio cero —lo que
@@ -29,6 +30,16 @@ interface Lab {
   cobertura: number | null;
   brecha: number;
   estado: 'sin_precio_cero' | 'cubierto' | 'parcial' | 'sin_compensacion';
+  /** Pagos registrados factura por factura (migración 013). */
+  confirmado: {
+    facturas: number;
+    pagadas: number;
+    parciales: number;
+    pendientes: number;
+    pagado: number;
+    porCobrar: number;
+    estado: 'sin_precio_cero' | 'pagado' | 'parcial' | 'pendiente';
+  };
 }
 
 interface Totales {
@@ -59,6 +70,8 @@ interface Resp {
   mesesDisponibles: string[];
   incluyeMesAbierto?: boolean;
   totales: Totales | null;
+  /** null si el registro de pagos (migración 013) no está aplicado. */
+  pagos: { facturas: number; pagadas: number; pagado: number; porCobrar: number } | null;
   alPagar: { meses: string[]; mesesSinDato: string[] };
   labs: Lab[];
 }
@@ -102,6 +115,13 @@ function rangoDePreset(p: Preset, disponibles: string[]): { desde: string; hasta
   return { desde: disponibles.find((m) => m.startsWith(ultimo.slice(0, 4))) ?? disponibles[0], hasta: ultimo };
 }
 
+const ESTADO_CONF: Record<Lab['confirmado']['estado'], { texto: string; tone: Tone }> = {
+  pagado: { texto: 'Pagado', tone: 'accent' },
+  parcial: { texto: 'Parcial', tone: 'warn' },
+  pendiente: { texto: 'Pendiente', tone: 'danger' },
+  sin_precio_cero: { texto: 'Sin precio cero', tone: 'neutral' },
+};
+
 const NIT_VALIDO = /^\d{5,15}$/;
 
 function Detalle({
@@ -110,12 +130,16 @@ function Detalle({
   hasta,
   alPagarDisponible,
   mesesSinDatos,
+  conPagos,
+  onCambioPagos,
 }: {
   l: Lab;
   desde: string;
   hasta: string;
   alPagarDisponible: boolean;
   mesesSinDatos: string[];
+  conPagos: boolean;
+  onCambioPagos: () => void;
 }) {
   const fila = (k: string, v: string, hint?: string) => (
     <div className="flex items-baseline justify-between gap-4 border-b border-line py-1.5 last:border-0">
@@ -137,7 +161,7 @@ function Detalle({
         {fila('Margen real / sin precio cero', `${pctFmt(l.margenPct)} / ${pctFmt(l.margenSinPrecioCeroPct)}`)}
       </div>
       <div>
-        <div className="mb-1 font-medium text-ink">Lo que devolvió el laboratorio</div>
+        <div className="mb-1 font-medium text-ink">Lo que devolvió el laboratorio según HGI</div>
         {fila('Mercancía gratis en compras', formatPrice(l.recibidoMercancia), `${miles(l.unidadesRecibidas)} und en facturas de compra + entradas por bonificados`)}
         {fila('Descuento en factura de compra', formatPrice(l.descuentoFacturaCompra))}
         {fila(
@@ -145,9 +169,14 @@ function Detalle({
           alPagarDisponible ? formatPrice(l.descuentoAlPagar) : 'Sin dato',
           alPagarDisponible ? undefined : 'El P&G de estos meses no está completo',
         )}
-        {fila('Cobertura observada', pctFmt(l.cobertura))}
-        {fila('Brecha', formatPrice(l.brecha))}
+        {fila('Cobertura observada', `${pctFmt(l.cobertura)} · ${ESTADO[l.estado].texto}`, 'Inferida: puede incluir descuentos comerciales normales')}
+        {fila('Brecha observada', formatPrice(l.brecha))}
       </div>
+      {conPagos && l.precioCero.costo > 0 && NIT_VALIDO.test(l.nit) && (
+        <div className="md:col-span-2">
+          <FacturasPrecioCero nit={l.nit} desde={desde.slice(0, 7)} hasta={hasta.slice(0, 7)} onCambio={onCambioPagos} />
+        </div>
+      )}
       {l.precioCero.costo > 0 && NIT_VALIDO.test(l.nit) && (
         <div className="md:col-span-2">
           <a
@@ -170,6 +199,21 @@ function Detalle({
   );
 }
 
+function EstadoLab({ l, conPagos }: { l: Lab; conPagos: boolean }) {
+  if (!conPagos) return <Badge tone={ESTADO[l.estado].tone}>{ESTADO[l.estado].texto}</Badge>;
+  const c = l.confirmado;
+  return (
+    <span className="inline-flex flex-col items-center gap-0.5">
+      <Badge tone={ESTADO_CONF[c.estado].tone}>{ESTADO_CONF[c.estado].texto}</Badge>
+      {c.facturas > 0 && (
+        <span className="tabular text-[10px] text-ink-faint">
+          {c.pagadas}/{c.facturas} facturas
+        </span>
+      )}
+    </span>
+  );
+}
+
 export default function DescuentosView() {
   const [data, setData] = useState<Resp | null>(null);
   const [cargando, setCargando] = useState(true);
@@ -180,12 +224,15 @@ export default function DescuentosView() {
   const [busqueda, setBusqueda] = useState('');
   const [soloP0, setSoloP0] = useState(true);
   const [abierto, setAbierto] = useState<string | null>(null);
+  // Sube cuando se registra/anula un pago: recarga los totales sin perder el rango.
+  const [version, setVersion] = useState(0);
 
   // Primera carga sin rango: trae los meses disponibles y fija el preset.
   useEffect(() => {
     let vigente = true;
     const url = rango ? `/api/descuentos?desde=${rango.desde}&hasta=${rango.hasta}` : '/api/descuentos';
-    setCargando(true);
+    // Una recarga por pago no vuelve a pintar "Cargando…" encima de la tabla.
+    if (version === 0) setCargando(true);
     pedir<Resp>(url).then((j) => {
       if (!vigente) return;
       if (!j) setError('No se pudo contactar al servidor');
@@ -207,7 +254,7 @@ export default function DescuentosView() {
     return () => {
       vigente = false;
     };
-  }, [rango]);
+  }, [rango, version]);
 
   const elegirPreset = (p: Preset) => {
     setPreset(p);
@@ -226,6 +273,7 @@ export default function DescuentosView() {
   }, [data, busqueda, soloP0]);
 
   const t = data?.totales;
+  const pg = data?.pagos ?? null;
   // Sin ningún mes con P&G completo el canal "al pagar" no se conoce: se dice, no se pinta $ 0.
   const alPagarDisponible = (data?.alPagar.meses.length ?? 0) > 0;
   const desde = data?.desde ?? '';
@@ -325,12 +373,22 @@ export default function DescuentosView() {
               tone="accent"
               delta={`${pctFmt(t.margenSinPrecioCeroPct)} sin el precio cero`}
             />
-            <KpiCard
-              label="Brecha por cobrar"
-              {...kpiMoney(t.brecha)}
-              tone={t.brecha > 0 ? 'danger' : 'neutral'}
-              hint={`${t.labsConBrecha} laboratorios con brecha`}
-            />
+            {pg ? (
+              <KpiCard
+                label="Por cobrar a laboratorios"
+                {...kpiMoney(pg.porCobrar)}
+                tone={pg.porCobrar > 0 ? 'danger' : 'neutral'}
+                delta={`${miles(pg.pagadas)} de ${miles(pg.facturas)} facturas pagadas`}
+                hint={`Según pagos registrados · brecha observada en HGI: ${formatPrice(t.brecha)}`}
+              />
+            ) : (
+              <KpiCard
+                label="Brecha por cobrar"
+                {...kpiMoney(t.brecha)}
+                tone={t.brecha > 0 ? 'danger' : 'neutral'}
+                hint={`${t.labsConBrecha} laboratorios con brecha`}
+              />
+            )}
           </div>
 
           <section className="space-y-3">
@@ -373,8 +431,9 @@ export default function DescuentosView() {
                       <Th align="right" className={SOLO_MD}>% venta</Th>
                       <Th align="right" className={SOLO_XL}>Margen</Th>
                       <Th align="right" className={SOLO_XL}>Sin precio cero</Th>
-                      <Th align="right" className={SOLO_MD}>Devuelto</Th>
-                      <Th align="right">Brecha</Th>
+                      <Th align="right" className={SOLO_MD}>{pg ? 'Devuelto HGI' : 'Devuelto'}</Th>
+                      {pg && <Th align="right" className={SOLO_MD}>Pagado</Th>}
+                      <Th align="right">{pg ? 'Por cobrar' : 'Brecha'}</Th>
                       <Th align="center" className={SOLO_MD}>Estado</Th>
                     </tr>
                   </thead>
@@ -392,7 +451,7 @@ export default function DescuentosView() {
                               <div className="font-medium text-ink">{l.nombre}</div>
                               <div className="tabular text-[11px] text-ink-faint">NIT {l.nit}</div>
                               <div className="mt-1 md:hidden">
-                                <Badge tone={ESTADO[l.estado].tone}>{ESTADO[l.estado].texto}</Badge>
+                                <EstadoLab l={l} conPagos={!!pg} />
                               </div>
                             </td>
                             <td className="tabular px-4 py-3 text-right text-ink">{formatPrice(l.precioCero.costo)}</td>
@@ -400,17 +459,35 @@ export default function DescuentosView() {
                             <td className={`tabular px-4 py-3 text-right ${(l.margenPct ?? 0) < 0 ? 'text-danger' : 'text-ink'} ${SOLO_XL}`}>{pctFmt(l.margenPct)}</td>
                             <td className={`tabular px-4 py-3 text-right text-ink-muted ${SOLO_XL}`}>{pctFmt(l.margenSinPrecioCeroPct)}</td>
                             <td className={`tabular px-4 py-3 text-right text-ink ${SOLO_MD}`}>{formatPrice(l.compensacionObservada)}</td>
-                            <td className={`tabular px-4 py-3 text-right ${l.brecha > 0 ? 'font-medium text-danger' : 'text-ink-faint'}`}>
-                              {l.brecha > 0 ? formatPrice(l.brecha) : '—'}
-                            </td>
+                            {pg && (
+                              <td className={`tabular px-4 py-3 text-right text-ink ${SOLO_MD}`}>
+                                {l.confirmado.pagado ? formatPrice(l.confirmado.pagado) : '—'}
+                              </td>
+                            )}
+                            {(() => {
+                              const v = pg ? l.confirmado.porCobrar : l.brecha;
+                              return (
+                                <td className={`tabular px-4 py-3 text-right ${v > 0 ? 'font-medium text-danger' : 'text-ink-faint'}`}>
+                                  {v > 0 ? formatPrice(v) : '—'}
+                                </td>
+                              );
+                            })()}
                             <td className={`px-4 py-3 text-center ${SOLO_MD}`}>
-                              <Badge tone={ESTADO[l.estado].tone}>{ESTADO[l.estado].texto}</Badge>
+                              <EstadoLab l={l} conPagos={!!pg} />
                             </td>
                           </tr>
                           {open && (
                             <tr>
-                              <td colSpan={8} className="p-0">
-                                <Detalle l={l} desde={desde} hasta={hasta} alPagarDisponible={alPagarDisponible} mesesSinDatos={data?.mesesSinDatos ?? []} />
+                              <td colSpan={pg ? 9 : 8} className="p-0">
+                                <Detalle
+                                  l={l}
+                                  desde={desde}
+                                  hasta={hasta}
+                                  alPagarDisponible={alPagarDisponible}
+                                  mesesSinDatos={data?.mesesSinDatos ?? []}
+                                  conPagos={!!pg}
+                                  onCambioPagos={() => setVersion((v) => v + 1)}
+                                />
                               </td>
                             </tr>
                           )}
@@ -422,12 +499,23 @@ export default function DescuentosView() {
                 {labs.length === 0 && <EmptyState title="Ningún laboratorio coincide" />}
               </div>
             </Card>
+            {pg ? (
+              <p className="text-xs text-ink-faint">
+                Toque un laboratorio para ver sus facturas con precio cero, registrar pagos y descargar el reporte.{' '}
+                <strong className="font-medium">Estado</strong> y <strong className="font-medium">Por cobrar</strong> salen de los pagos
+                que facturación y contabilidad registran factura por factura (nota crédito o producto precio cero): una factura está
+                pagada cuando lo registrado llega a su precio cero a costo o se marca como saldada.{' '}
+                <strong className="font-medium">Devuelto HGI</strong> es lo que se infiere de HGI (mercancía gratis y descuentos en
+                compras) y sirve de referencia: puede incluir condiciones comerciales normales.
+              </p>
+            ) : (
             <p className="text-xs text-ink-faint">
               Toque un laboratorio para ver el detalle y descargar su reporte. <strong className="font-medium">Devuelto</strong> suma
               mercancía gratis, descuento en factura de compra y descuento al pagar; los descuentos pueden incluir condiciones
               comerciales normales, por eso la cobertura es «observada». <strong className="font-medium">Cubierto</strong> = lo devuelto
               llega al 95 % del precio cero a costo.
             </p>
+            )}
           </section>
         </>
       )}

@@ -329,6 +329,9 @@ ninguna otra. Cron horario `?dataset=descuentos`, ventanas MENSUALES.
 - Un `?dataset=` desconocido en `/api/hgi/refresh` cae a reconstruir TODO: cualquier
   dataset nuevo necesita su rama antes de añadir el cron.
 - `npm test` corre los tests (node:test, sin dependencias).
+- **Pagos confirmados** (migración 013, `dd_pago`): facturación/contabilidad registran
+  factura por factura cómo pagó el laboratorio. Quién: `lib/hgi/descuentos/permisos.ts`
+  + env `DESCUENTOS_REGISTRADORES`. Sin la 013 la vista funciona como antes.
 
 ### Regla dura: nunca probar escrituras contra un dataset real
 

@@ -3,6 +3,8 @@ import { readMesesOk, readMesesPygCompletos, readResumenLabs } from '@/lib/hgi/d
 import { ordenarLabs, resumirLab, totalizar } from '@/lib/hgi/descuentos/resumen';
 import { mesesHasta, MES_INICIAL } from '@/lib/hgi/descuentos/refresh';
 import { hoyColombia } from '@/lib/hgi/ventas';
+import { readFacturasP0, readPagadoPorFactura, tablaPagosExiste } from '@/lib/hgi/descuentos/pagosStore';
+import { CONFIRMADO_VACIO, confirmadoPorLab } from '@/lib/hgi/descuentos/pagos';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -32,6 +34,11 @@ export const maxDuration = 30;
 const MES = /^\d{4}-(0[1-9]|1[0-2])$/;
 /** Tope del rango: dos años de meses, para acotar la consulta. */
 const MAX_MESES = 24;
+
+const finDeMes = (mes: string) => {
+  const [y, m] = mes.split('-').map(Number);
+  return `${mes}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`;
+};
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -64,6 +71,7 @@ export async function GET(req: Request) {
         mesesSinDatos,
         mesesDisponibles: disponibles,
         totales: null,
+        pagos: null,
         alPagar: { meses: [], mesesSinDato: [] },
         labs: [],
       });
@@ -74,7 +82,25 @@ export async function GET(req: Request) {
     const pygCompletos = new Set(await readMesesPygCompletos(meses[0], meses[meses.length - 1]));
     const mesesAlPagar = meses.filter((m) => pygCompletos.has(m));
     const filas = await readResumenLabs(meses[0], meses[meses.length - 1], mesesAlPagar);
-    const labs = ordenarLabs(filas.map(resumirLab));
+    const labsBase = ordenarLabs(filas.map(resumirLab));
+
+    // Pagos confirmados (migración 013): facturas con precio cero del rango y lo
+    // registrado por facturación/contabilidad. Sin la tabla, `pagos` = null y la
+    // vista sigue mostrando sólo la cobertura observada.
+    const tablaPagos = await tablaPagosExiste();
+    const facturas = await readFacturasP0(`${meses[0]}-01`, finDeMes(meses[meses.length - 1]));
+    const pagado = tablaPagos ? await readPagadoPorFactura([...new Set(facturas.map((f) => f.nit))]) : new Map();
+    const conf = confirmadoPorLab(facturas, pagado);
+    const labs = labsBase.map((l) => ({ ...l, confirmado: conf.get(l.nit) ?? CONFIRMADO_VACIO }));
+    const totalConf = labs.reduce(
+      (a, l) => ({
+        facturas: a.facturas + l.confirmado.facturas,
+        pagadas: a.pagadas + l.confirmado.pagadas,
+        pagado: a.pagado + l.confirmado.pagado,
+        porCobrar: a.porCobrar + l.confirmado.porCobrar,
+      }),
+      { facturas: 0, pagadas: 0, pagado: 0, porCobrar: 0 },
+    );
     return NextResponse.json({
       ok: true,
       completo: mesesSinDatos.length === 0,
@@ -85,7 +111,8 @@ export async function GET(req: Request) {
       mesesDisponibles: disponibles,
       // El mes en curso está abierto: sus cifras cambian hasta el cierre.
       incluyeMesAbierto: meses.includes(mesActual),
-      totales: totalizar(labs),
+      totales: totalizar(labsBase),
+      pagos: tablaPagos ? totalConf : null,
       alPagar: { meses: mesesAlPagar, mesesSinDato: meses.filter((m) => !pygCompletos.has(m)) },
       labs,
     });
