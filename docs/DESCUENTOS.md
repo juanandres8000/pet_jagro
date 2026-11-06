@@ -79,6 +79,30 @@ components/DescuentosView.tsx    vista
 Un mes cerrado con OK no se vuelve a pedir; para forzarlo: `?dataset=descuentos&mes=YYYY-MM`.
 `ok_en` guarda la última ingesta exitosa: un refresco fallido no borra ni oculta los datos anteriores.
 
+## Pagos confirmados (nov-2026, migración 013)
+Jotagro preguntó cómo sabe el tablero que un laboratorio está "cubierto": la cobertura
+observada se **infiere** de HGINet (mercancía gratis + descuentos en compras) y puede
+mezclar condiciones comerciales normales. Por eso facturación y contabilidad registran
+ahora, **factura por factura**, cómo pagó el laboratorio el precio cero.
+
+- Tabla `dd_pago` (`migrations/013_dd_pago.sql`, con RLS). La factura se identifica por
+  `(nit_proveedor, codigo_transaccion, documento)` de `dd_linea`, sin FK (dd_linea se
+  sustituye por lotes). Nada se borra: anular deja `anulado_en`/`anulado_por`.
+- Formas: `nota_credito`, `producto` (precio cero que llega en compras), `otro`.
+- Estado por factura (`lib/hgi/descuentos/pagos.ts`): **pagada** si lo registrado llega al
+  99 % del precio cero a costo o si alguien la marcó "saldada" (el laboratorio la repuso
+  pero se valoró distinto); **parcial** si hay algo; **pendiente** si nada.
+- Por laboratorio: `confirmado` (facturas, pagadas, pagado, por cobrar, estado
+  pagado/parcial/pendiente). Con la 013 aplicada la tabla muestra Pagado, Por cobrar y el
+  estado confirmado; la cobertura observada queda en el detalle como referencia. Sin la
+  013 todo se ve como antes (la API devuelve `pagos: null`).
+- **Quién registra**: `lib/hgi/descuentos/permisos.ts` — `facturacion@jotagro.com`
+  (Viviana) + correos de la variable `DESCUENTOS_REGISTRADORES` (coma) en Vercel, p. ej. la
+  contadora. El resto ve sin botones; la API responde 403.
+- API: `GET /api/descuentos/facturas?nit&desde=YYYY-MM&hasta=YYYY-MM`,
+  `POST /api/descuentos/pagos`, `DELETE /api/descuentos/pagos?id=N` (anula).
+- El periodo filtra por **fecha de la factura de venta**; el pago puede ser de cualquier fecha.
+
 ## Seguridad
 - Tablas con RLS sin policies (como todo `public`). El store **no crea tablas**: si
   falta la migración, falla con mensaje claro (una tabla creada por código nacería sin RLS).
@@ -94,6 +118,7 @@ Un mes cerrado con OK no se vuelve a pedir; para forzarlo: `?dataset=descuentos&
   ```
   node -e "const p=require('postgres');const s=p(process.env.DATABASE_URL.replace(':6543/',':5432/'));s.unsafe(require('fs').readFileSync('migrations/012_descuentos.sql','utf8')).then(()=>s.end())"
   ```
+- **Migración de pagos**: `migrations/013_dd_pago.sql`, igual que la 012 (puerto 5432).
 - **Backfill desde local** (opcional; el cron lo hace solo, ~2 meses por corrida):
   `node --env-file=.env.local --import ./scripts/ts-resolve.mjs scripts/descuentos-ingest.ts --desde=2026-01 --hasta=2026-10`
 - **Tests**: `npm test` (lógica pura, sin red ni BD).
@@ -109,7 +134,8 @@ Un mes cerrado con OK no se vuelve a pedir; para forzarlo: `?dataset=descuentos&
   distribuidor y no al laboratorio, ese descuento cae en el distribuidor.
 
 ## Pendientes / preguntas para Jotagro
-- Confirmar qué laboratorios reconocen el precio cero y por qué canal (hoy se infiere).
+- Confirmar qué laboratorios reconocen el precio cero y por qué canal (hoy se infiere;
+  desde la 013 lo confirma facturación factura por factura).
 - Confirmar si reconocen a costo, a lista o un %. La vista muestra ambos valores.
 - El P&G del dash no tiene agosto–octubre 2026 completos (sin ventana mensual): mientras
   tanto el descuento al pagar de esos meses sale "Sin dato". Se corrige reactivando el
