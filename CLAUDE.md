@@ -24,6 +24,7 @@ Sistema de gestión de picking y distribución para productos veterinarios. Demo
 Nav agrupado (`MENU_GROUPS` en `app/page.tsx`):
 - **DIRECCIÓN**: Gerencia ← home del dashboard (tab por defecto)
 - **COMERCIAL**: Clientes
+- **COMPRAS**: Rotación de inventario (ver docs/ROTACION.md)
 - **FINANZAS**: Cartera, Vendedores, Descuentos (precio cero, ver docs/DESCUENTOS.md)
 
 **OPERACIÓN (Picking, Inventario, Catálogo) está oculta**, no retirada: el grupo
@@ -332,6 +333,16 @@ ninguna otra. Cron horario `?dataset=descuentos`, ventanas MENSUALES.
 - **Pagos confirmados** (migración 013, `dd_pago`): facturación/contabilidad registran
   factura por factura cómo pagó el laboratorio. Quién: `lib/hgi/descuentos/permisos.ts`
   + env `DESCUENTOS_REGISTRADORES`. Sin la 013 la vista funciona como antes.
+
+### Rotación de inventario — docs/ROTACION.md
+Menú Compras → Rotación (`/rotacion`). Tablas `rot_*` (migración 014, RLS). Cron
+`?dataset=rotacion` (:02 y :32), ventanas mensuales + foto de existencias.
+- Validado contra el informe de rotación de HGI: entradas/salidas 2.256/2.256 idénticas.
+- **El signo de CantidadDocumento NO da la dirección**: la da el código (`TRANSACCIONES`
+  en `lib/hgi/rotacion/mappers.ts`). Un código nuevo hace fallar la ventana a propósito.
+- Inicial/final se calculan hacia atrás desde la existencia actual: hacen falta todos
+  los meses desde el inicio del periodo hasta hoy.
+- Rotación por bodega; existencia/cobertura/sugerido/estado a nivel empresa.
 
 ### Regla dura: nunca probar escrituras contra un dataset real
 

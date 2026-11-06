@@ -32,9 +32,9 @@ import { escribirVentana, marcarError, marcarIntento, type Ventana } from './sto
 const TIMEOUT_MS = 60_000;
 const REINTENTOS = 3;
 const BACKOFF_BASE_MS = 1500;
-const PAUSA_MS = 400;
+export const PAUSA_MS = 400;
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /** Parámetros en ORDEN EXACTO (routing por firma de WebAPI; ver ventas.ts). */
 const params = (desde: string, hasta: string, transaccion: string, tipoDocumento: '0' | '1') => ({
@@ -61,7 +61,7 @@ function exigirTiempo(deadline: number) {
   if (Date.now() + TIMEOUT_MS > deadline) throw new PresupuestoAgotado('Presupuesto de la corrida agotado a mitad de ventana; se reintenta en la próxima');
 }
 
-async function traerDetalle(
+export async function traerDetalle(
   desde: string,
   hasta: string,
   transaccion: string,
@@ -98,7 +98,7 @@ const FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/;
  *  - Id repetido en la respuesta: se cuenta. Medido en ago–sep 2026: 0 repetidos
  *    en 45.601 líneas de ventas y compras.
  */
-function depurar(filas: HgiDetalleLinea[], v: Ventana): { filas: HgiDetalleLinea[]; fuera: number; invalidas: number; repetidas: number } {
+export function depurar(filas: HgiDetalleLinea[], v: Ventana): { filas: HgiDetalleLinea[]; fuera: number; invalidas: number; repetidas: number } {
   const porId = new Map<string, HgiDetalleLinea>();
   let fuera = 0;
   let invalidas = 0;
